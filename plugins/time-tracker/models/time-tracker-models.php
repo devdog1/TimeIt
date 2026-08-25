@@ -111,7 +111,7 @@ class TimeTrackerModel {
             [$userId, $itemId, trim($taskName), $now, $now, $token]
         );
 
-        return $pdb->lastInsertId();
+        return get_db_connection()->lastInsertId();
     }
 
     public static function checkinTaskResponse($taskId, $userId = null, $action = 'still_working', $checkinToken = null) {
@@ -341,7 +341,7 @@ class TimeTrackerModel {
             $teamId = $id;
         } else {
             $pdb->query("INSERT INTO {$tbTeams} (name, description, supervisor_user_id) VALUES (?, ?, ?)", [trim($name), trim($description), $supId]);
-            $teamId = $pdb->lastInsertId();
+            $teamId = get_db_connection()->lastInsertId();
         }
 
         $pdb->query("DELETE FROM {$tbMembers} WHERE team_id = ?", [$teamId]);
@@ -444,7 +444,7 @@ class TimeTrackerModel {
                 "INSERT INTO {$tbItems} (category, name, description, estimated_hours, lead_user_id) VALUES (?, ?, ?, ?, ?)",
                 [$category, trim($name), trim($description), $estHours, $leadUser]
             );
-            return $pdb->lastInsertId();
+            return get_db_connection()->lastInsertId();
         }
     }
 
@@ -522,7 +522,7 @@ class TimeTrackerModel {
                 "INSERT INTO {$tbTasks} (user_id, item_id, task_name, hours, entry_datetime, status, last_checkin_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [$userId, $itemId, trim($taskName), $numHours, $formattedDt, $status, date('Y-m-d H:i:s')]
             );
-            return $pdb->lastInsertId();
+            return get_db_connection()->lastInsertId();
         }
     }
 
