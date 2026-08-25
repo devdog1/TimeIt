@@ -346,9 +346,10 @@ class TimeTrackerModel {
 
         $pdb->query("DELETE FROM {$tbMembers} WHERE team_id = ?", [$teamId]);
         if (!empty($member_user_ids)) {
-            foreach ($member_user_ids as $uid) {
-                if ((int)$uid > 0) {
-                    $pdb->query("INSERT IGNORE INTO {$tbMembers} (team_id, user_id) VALUES (?, ?)", [$teamId, (int)$uid]);
+            $uniqueUids = array_unique(array_map('intval', $member_user_ids));
+            foreach ($uniqueUids as $uid) {
+                if ($uid > 0) {
+                    $pdb->query("INSERT INTO {$tbMembers} (team_id, user_id) VALUES (?, ?)", [$teamId, $uid]);
                 }
             }
         }
