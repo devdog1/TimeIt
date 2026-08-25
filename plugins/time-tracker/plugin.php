@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: IT Time Tracker
- * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with financial year reports, teams, and scheduled email reports.
- * Version: 1.3.0
+ * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with financial year reports, teams, scheduled email reports, and Chrome Service Worker 15-minute active task check-ins.
+ * Version: 1.5.0
  * Author: DevDog
  * Permissions: user_access, supervisor_access, finance_access
  * Roles: user:user_access; supervisor:user_access,supervisor_access; finance:user_access,finance_access
@@ -14,33 +14,80 @@ if (!defined('APP_ROOT')) {
 
 require_once __DIR__ . '/models/time-tracker-models.php';
 
+// Early checkin token processor (Resilient to SSO Session Expiry & Closed Web Pages)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'checkin_response') {
+    $taskId = (int)($_POST['task_id'] ?? 0);
+    $checkinAction = $_POST['checkin_action'] ?? 'still_working';
+    $checkinToken = $_POST['checkin_token'] ?? null;
+    $userId = $_SESSION['user_id'] ?? null;
+
+    if ($taskId > 0 && (!empty($checkinToken) || $userId)) {
+        try {
+            $res = TimeTrackerModel::checkinTaskResponse($taskId, $userId, $checkinAction, $checkinToken);
+            if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => true, 'status' => $res]);
+                exit;
+            }
+            $_SESSION['tt_success'] = ($res === 'finished') ? "Task marked as finished! Total elapsed time saved." : "Task status updated: Still working on it!";
+        } catch (Exception $e) {
+            if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+                exit;
+            }
+            $_SESSION['tt_error'] = $e->getMessage();
+        }
+    }
+}
+
 // Plugin activation hook: install tables
 add_action('plugin_activate_time-tracker', function() {
     TimeTrackerModel::installTables();
 });
 
-// Register Scheduler API background task for emailed reports
+// Register Scheduler API background tasks
 add_action('init_scheduler', function($scheduler) {
     if (method_exists($scheduler, 'registerTask')) {
+        // Daily emailed reports check
         $scheduler->registerTask(
             'send_scheduled_reports',
             'time_tracker_send_scheduled_reports',
-            86400, // Daily interval check
+            86400,
+            'time-tracker'
+        );
+
+        // 15-minute active task check-in background runner (900 seconds)
+        $scheduler->registerTask(
+            'check_active_tasks',
+            'time_tracker_check_active_tasks',
+            900,
             'time-tracker'
         );
     }
 });
 
+// 15-minute active task background check-in runner
+function time_tracker_check_active_tasks() {
+    $needingCheckin = TimeTrackerModel::getTasksNeedingCheckin();
+    $count = count($needingCheckin);
+
+    $logMsg = sprintf("[TimeTracker 15-Min Checkin] Found %d active tasks needing check-in prompt.\n", $count);
+    echo $logMsg;
+
+    if (function_exists('log_action')) {
+        log_action('TIME_TRACKER_ACTIVE_TASK_CHECKIN', ['count' => $count]);
+    }
+}
+
 // Helper: Generate Previous Week's Team Activities HTML Report
 function time_tracker_generate_weekly_team_report_html($teamId = null) {
-    // Previous week Monday to Sunday
     $prevMon = date('Y-m-d', strtotime('monday last week'));
     $prevSun = date('Y-m-d', strtotime('sunday last week'));
 
     $tasks = TimeTrackerModel::getTasks(null, $prevMon, $prevSun, null, null, $teamId);
     $totalHours = array_sum(array_column($tasks, 'hours'));
 
-    // Group tasks by team / user
     $grouped = [];
     foreach ($tasks as $t) {
         $uname = $t['user_name'];
@@ -158,6 +205,111 @@ function time_tracker_send_scheduled_reports() {
         log_action('TIME_TRACKER_SCHEDULED_REPORT', ['details' => $logMsg]);
     }
 }
+
+// Inject Chrome Web Notification & Service Worker JS for Closed-Page Support
+add_action('theme_footer', function() {
+    $userId = $_SESSION['user_id'] ?? 0;
+    if (!$userId) return;
+
+    $activeTask = TimeTrackerModel::getActiveTaskForUser($userId);
+    if (!$activeTask) return;
+
+    $activeTaskId = $activeTask['id'];
+    $checkinToken = $activeTask['checkin_token'] ?? '';
+    $lastCheckinTs = strtotime($activeTask['last_checkin_at'] ?? $activeTask['entry_datetime']);
+    $elapsedCheckinSecs = max(0, time() - $lastCheckinTs);
+    $jsonTask = json_encode($activeTask);
+    $csrfToken = $_SESSION['csrf_token'] ?? '';
+    ?>
+    <div id="activeTaskCheckinModal" class="modal fade" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-primary border-3">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-clock-rotate-left me-2"></i> Active Task Check-in</h5>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fa-solid fa-bell-ring fs-1 text-primary mb-3"></i>
+                    <h5 class="fw-bold mb-2">Are you still working on this task?</h5>
+                    <p class="text-dark bg-light p-2 rounded border fw-bold fs-6 mb-3">
+                        "<?= htmlspecialchars($activeTask['task_name']) ?>"
+                    </p>
+                    <p class="text-muted small mb-0">Periodic 15-minute check-in to keep your time entries accurate.</p>
+                </div>
+                <div class="modal-footer justify-content-center gap-2">
+                    <button type="button" onclick="sendCheckinResponse('still_working');" class="btn btn-primary px-4 fw-bold">
+                        <i class="fa-solid fa-play me-1"></i> Still Working On It
+                    </button>
+                    <button type="button" onclick="sendCheckinResponse('finished');" class="btn btn-success px-4 fw-bold">
+                        <i class="fa-solid fa-check me-1"></i> Mark as Finished
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function sendCheckinResponse(action) {
+        var formData = new FormData();
+        formData.append('action', 'checkin_response');
+        formData.append('task_id', '<?= $activeTaskId ?>');
+        formData.append('checkin_token', '<?= addslashes($checkinToken) ?>');
+        formData.append('checkin_action', action);
+        formData.append('csrf_token', '<?= $csrfToken ?>');
+
+        fetch('index.php?route=time_tracker', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            window.location.reload();
+        })
+        .catch(function(err) {
+            window.location.reload();
+        });
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        var activeTaskObj = <?= $jsonTask ?>;
+        var elapsedSecs = <?= $elapsedCheckinSecs ?>;
+        var checkinInterval = 900; // 15 minutes = 900 seconds
+        var remainingMs = Math.max(1000, (checkinInterval - elapsedSecs) * 1000);
+
+        // Register Service Worker to handle closed-page background notifications
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('plugins/time-tracker/assets/sw.js')
+            .then(function(reg) {
+                if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                    Notification.requestPermission();
+                }
+
+                // Delegate notification trigger to Service Worker
+                setTimeout(function() {
+                    if (reg.active) {
+                        reg.active.postMessage({
+                            type: 'TRIGGER_ACTIVE_TASK_CHECKIN',
+                            task: activeTaskObj
+                        });
+                    }
+                }, remainingMs);
+            })
+            .catch(function(err) {
+                console.log('SW registration error:', err);
+            });
+        }
+
+        if (elapsedSecs >= checkinInterval) {
+            var modalEl = document.getElementById('activeTaskCheckinModal');
+            if (modalEl && typeof bootstrap !== 'undefined') {
+                var modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            }
+        }
+    });
+    </script>
+    <?php
+});
 
 // Register navigation links
 add_filter('theme_nav_links', function($links) {
@@ -299,7 +451,13 @@ function time_tracker_handle_posts() {
     $isSupervisor = has_permission('time_tracker_supervisor_access') || has_role('administrator');
 
     try {
-        if ($action === 'save_task' || $action === 'quick_add_task') {
+        if ($action === 'start_timer_task') {
+            $itemId = (int)($_POST['item_id'] ?? 0);
+            $taskName = $_POST['task_name'] ?? '';
+            TimeTrackerModel::startTaskTimer($userId, $itemId, $taskName);
+            $_SESSION['tt_success'] = "Active task timer started! We will check in with you every 15 minutes.";
+        }
+        elseif ($action === 'save_task' || $action === 'quick_add_task') {
             $taskId = isset($_POST['task_id']) ? (int)$_POST['task_id'] : 0;
             $itemId = (int)($_POST['item_id'] ?? 0);
             $taskName = $_POST['task_name'] ?? '';
@@ -323,7 +481,7 @@ function time_tracker_handle_posts() {
                 }
             }
 
-            TimeTrackerModel::saveTask($taskId, $targetUserId, $itemId, $taskName, $hours, $entryDatetime);
+            TimeTrackerModel::saveTask($taskId, $targetUserId, $itemId, $taskName, $hours, $entryDatetime, 'completed');
             $_SESSION['tt_success'] = ($taskId > 0) ? "Task updated successfully." : "Task logged successfully!";
         }
         elseif ($action === 'delete_task') {
@@ -418,7 +576,7 @@ function time_tracker_export_csv() {
     header('Content-Disposition: attachment; filename=time_tracker_report_' . date('Y-m-d') . '.csv');
 
     $output = fopen('php://output', 'w');
-    fputcsv($output, ['Task ID', 'User Name', 'Date & Time', 'Category', 'Item / Project Name', 'Task Description', 'Hours Spent']);
+    fputcsv($output, ['Task ID', 'User Name', 'Date & Time', 'Category', 'Item / Project Name', 'Task Description', 'Hours Spent', 'Status']);
 
     foreach ($tasks as $t) {
         fputcsv($output, [
@@ -428,7 +586,8 @@ function time_tracker_export_csv() {
             ucfirst($t['item_category'] ?? ''),
             $t['item_name'] ?? 'Unassigned',
             $t['task_name'],
-            number_format($t['hours'], 2)
+            number_format($t['hours'], 2),
+            ucfirst($t['status'] ?? 'completed')
         ]);
     }
     fclose($output);

@@ -14,14 +14,19 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_tasks (
     user_id INT NOT NULL,
     item_id INT NOT NULL,
     task_name VARCHAR(255) NOT NULL,
-    hours DECIMAL(6,2) NOT NULL,
+    hours DECIMAL(6,2) NOT NULL DEFAULT 0.00,
     entry_datetime DATETIME NOT NULL,
+    status ENUM('in_progress', 'completed') NOT NULL DEFAULT 'completed',
+    last_checkin_at DATETIME NULL,
+    checkin_token VARCHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_user_datetime (user_id, entry_datetime),
     KEY idx_user_id (user_id),
     KEY idx_item_id (item_id),
-    KEY idx_entry_datetime (entry_datetime)
+    KEY idx_entry_datetime (entry_datetime),
+    KEY idx_status (status),
+    KEY idx_checkin_token (checkin_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS plug_time_tracker_teams (
@@ -37,4 +42,9 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_team_members (
     user_id INT NOT NULL,
     PRIMARY KEY (team_id, user_id),
     KEY idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS plug_time_tracker_settings (
+    setting_key VARCHAR(64) PRIMARY KEY,
+    setting_value TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

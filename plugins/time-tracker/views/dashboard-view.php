@@ -1,6 +1,7 @@
 <?php
 $userId = $_SESSION['user_id'] ?? 0;
 $items = TimeTrackerModel::getItems();
+$activeTask = TimeTrackerModel::getActiveTaskForUser($userId);
 
 // Filter parameters
 $catFilter = $_GET['category'] ?? '';
@@ -8,7 +9,6 @@ $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-t');
 
 $tasks = TimeTrackerModel::getTasks($userId, $startDate, $endDate, null, $catFilter);
-
 $totalHours = array_sum(array_column($tasks, 'hours'));
 
 // Check if editing a task
@@ -16,7 +16,7 @@ $editTask = null;
 if (isset($_GET['edit_task'])) {
     $editTask = TimeTrackerModel::getTaskById((int)$_GET['edit_task']);
     if ($editTask && $editTask['user_id'] != $userId && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
-        $editTask = null; // Prevent unauthorized editing via GET
+        $editTask = null;
     }
 }
 ?>
@@ -52,13 +52,81 @@ if (isset($_GET['edit_task'])) {
         </div>
     <?php endif; ?>
 
-    <!-- Log/Edit Task Card -->
+    <!-- Running Active Task Timer Widget (if any) -->
+    <?php if ($activeTask):
+        $startTs = strtotime($activeTask['entry_datetime']);
+        $elapsedSecs = max(0, time() - $startTs);
+    ?>
+        <div class="card shadow-sm mb-4 border-2 border-primary bg-primary-subtle">
+            <div class="card-body py-3 d-flex flex-wrap justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="spinner-grow text-primary" role="status">
+                        <span class="visually-hidden">Running...</span>
+                    </div>
+                    <div>
+                        <span class="badge bg-primary text-uppercase mb-1">Active Timer Running</span>
+                        <h5 class="fw-bold mb-0 text-dark"><?= htmlspecialchars($activeTask['task_name']) ?></h5>
+                        <small class="text-muted">Item: <strong><?= htmlspecialchars($activeTask['item_name']) ?></strong> &bull; Started at <?= date('h:i A', $startTs) ?></small>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center gap-3 mt-2 mt-md-0">
+                    <div class="text-end me-2">
+                        <small class="text-uppercase fw-bold text-muted d-block">Elapsed Time</small>
+                        <span id="activeTimerClock" class="fw-bold fs-4 text-primary">00:00:00</span>
+                    </div>
+
+                    <form action="index.php?route=time_tracker" method="POST" class="d-inline">
+                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                        <input type="hidden" name="action" value="checkin_response">
+                        <input type="hidden" name="task_id" value="<?= $activeTask['id'] ?>">
+                        <input type="hidden" name="checkin_action" value="still_working">
+                        <button type="submit" class="btn btn-outline-primary btn-sm fw-bold">
+                            <i class="fa-solid fa-rotate me-1"></i> Still Working
+                        </button>
+                    </form>
+
+                    <form action="index.php?route=time_tracker" method="POST" class="d-inline">
+                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                        <input type="hidden" name="action" value="checkin_response">
+                        <input type="hidden" name="task_id" value="<?= $activeTask['id'] ?>">
+                        <input type="hidden" name="checkin_action" value="finished">
+                        <button type="submit" class="btn btn-success btn-sm fw-bold px-3">
+                            <i class="fa-solid fa-check me-1"></i> Finish Task
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function() {
+            var startSecs = <?= $elapsedSecs ?>;
+            function updateClock() {
+                startSecs++;
+                var hrs = Math.floor(startSecs / 3600);
+                var mins = Math.floor((startSecs % 3600) / 60);
+                var secs = startSecs % 60;
+                var str = (hrs < 10 ? '0' + hrs : hrs) + ':' + (mins < 10 ? '0' + mins : mins) + ':' + (secs < 10 ? '0' + secs : secs);
+                var el = document.getElementById('activeTimerClock');
+                if (el) el.innerText = str;
+            }
+            setInterval(updateClock, 1000);
+            updateClock();
+        })();
+        </script>
+    <?php endif; ?>
+
+    <!-- Start Live Timer or Log Completed Task Card -->
     <div class="card shadow-sm mb-4 border-0">
-        <div class="card-header bg-primary text-white py-3">
+        <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0 fw-bold">
                 <i class="fa-solid <?= $editTask ? 'fa-pen-to-square' : 'fa-plus-circle' ?> me-2"></i>
-                <?= $editTask ? 'Edit Task Entry' : 'Log New Time Entry' ?>
+                <?= $editTask ? 'Edit Task Entry' : 'Log Time or Start Live Timer' ?>
             </h5>
+            <?php if (!$editTask && !$activeTask): ?>
+                <span class="badge bg-light text-primary">Live 15-Min Check-in Supported</span>
+            <?php endif; ?>
         </div>
         <div class="card-body">
             <form action="index.php?route=time_tracker" method="POST" class="row g-3">
@@ -96,7 +164,7 @@ if (isset($_GET['edit_task'])) {
 
                 <div class="col-md-1">
                     <label class="form-label fw-bold small">Hours</label>
-                    <input type="number" step="0.25" min="0.1" name="hours" class="form-control" placeholder="0.00" value="<?= htmlspecialchars($editTask['hours'] ?? '') ?>" required>
+                    <input type="number" step="0.25" min="0" name="hours" class="form-control" placeholder="0.00" value="<?= htmlspecialchars($editTask['hours'] ?? '') ?>">
                 </div>
 
                 <div class="col-md-2">
@@ -104,12 +172,19 @@ if (isset($_GET['edit_task'])) {
                     <input type="datetime-local" name="entry_datetime" class="form-control" value="<?= htmlspecialchars(isset($editTask['entry_datetime']) ? date('Y-m-d\TH:i', strtotime($editTask['entry_datetime'])) : date('Y-m-d\TH:i')) ?>" required>
                 </div>
 
-                <div class="col-12 text-end">
+                <div class="col-12 text-end d-flex justify-content-end gap-2">
                     <?php if ($editTask): ?>
                         <a href="index.php?route=time_tracker" class="btn btn-secondary me-2"><i class="fa-solid fa-xmark me-1"></i> Cancel</a>
                     <?php endif; ?>
+
+                    <?php if (!$editTask && !$activeTask): ?>
+                        <button type="submit" onclick="this.form.action.value='start_timer_task';" class="btn btn-success px-3">
+                            <i class="fa-solid fa-play me-1"></i> Start Live Task Timer
+                        </button>
+                    <?php endif; ?>
+
                     <button type="submit" class="btn btn-primary px-4">
-                        <i class="fa-solid fa-floppy-disk me-1"></i> <?= $editTask ? 'Update Task' : 'Add Time Entry' ?>
+                        <i class="fa-solid fa-floppy-disk me-1"></i> <?= $editTask ? 'Update Task' : 'Save Time Entry' ?>
                     </button>
                 </div>
             </form>
@@ -160,6 +235,7 @@ if (isset($_GET['edit_task'])) {
                             <th>Category</th>
                             <th>Applied Item / Project</th>
                             <th>Task Description</th>
+                            <th>Status</th>
                             <th>Hours Spent</th>
                             <th class="text-end">Actions</th>
                         </tr>
@@ -167,7 +243,7 @@ if (isset($_GET['edit_task'])) {
                     <tbody>
                         <?php if (empty($tasks)): ?>
                             <tr>
-                                <td colspan="6" class="text-center py-4 text-muted">
+                                <td colspan="7" class="text-center py-4 text-muted">
                                     <i class="fa-solid fa-folder-open fs-3 d-block mb-2"></i>
                                     No time entries found for the selected period.
                                 </td>
@@ -191,6 +267,13 @@ if (isset($_GET['edit_task'])) {
                                         <?= htmlspecialchars($task['item_name'] ?? 'Unassigned') ?>
                                     </td>
                                     <td><?= htmlspecialchars($task['task_name']) ?></td>
+                                    <td>
+                                        <?php if (($task['status'] ?? 'completed') === 'in_progress'): ?>
+                                            <span class="badge bg-warning text-dark"><i class="fa-solid fa-spinner fa-spin me-1"></i> In Progress</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-success-subtle text-success border border-success"><i class="fa-solid fa-check me-1"></i> Finished</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="fw-bold text-success">
                                         <i class="fa-regular fa-clock me-1"></i> <?= number_format($task['hours'], 2) ?> hrs
                                     </td>

@@ -35,14 +35,19 @@ class TimeTrackerModel {
             user_id INT NOT NULL,
             item_id INT NOT NULL,
             task_name VARCHAR(255) NOT NULL,
-            hours DECIMAL(6,2) NOT NULL,
+            hours DECIMAL(6,2) NOT NULL DEFAULT 0.00,
             entry_datetime DATETIME NOT NULL,
+            status ENUM('in_progress', 'completed') NOT NULL DEFAULT 'completed',
+            last_checkin_at DATETIME NULL,
+            checkin_token VARCHAR(64) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uq_user_datetime (user_id, entry_datetime),
             KEY idx_user_id (user_id),
             KEY idx_item_id (item_id),
-            KEY idx_entry_datetime (entry_datetime)
+            KEY idx_entry_datetime (entry_datetime),
+            KEY idx_status (status),
+            KEY idx_checkin_token (checkin_token)
         ");
 
         $pdb->createTable('teams', "
@@ -66,6 +71,106 @@ class TimeTrackerModel {
         ");
     }
 
+    /* ================= ACTIVE TASK TIMER & CHECKIN METHODS ================= */
+
+    public static function getActiveTaskForUser($userId) {
+        $pdb = self::getPdb();
+        $tbTasks = $pdb->getTableName('tasks');
+        $tbItems = $pdb->getTableName('items');
+
+        $sql = "SELECT t.*, i.name as item_name, i.category as item_category
+                FROM {$tbTasks} t
+                LEFT JOIN {$tbItems} i ON t.item_id = i.id
+                WHERE t.user_id = ? AND t.status = 'in_progress'
+                ORDER BY t.id DESC LIMIT 1";
+
+        $stmt = $pdb->query($sql, [$userId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public static function startTaskTimer($userId, $itemId, $taskName) {
+        $pdb = self::getPdb();
+        $tbTasks = $pdb->getTableName('tasks');
+
+        // Check if user already has an active in_progress task
+        $activeTask = self::getActiveTaskForUser($userId);
+        if ($activeTask) {
+            throw new Exception("You already have an active running task ('" . htmlspecialchars($activeTask['task_name']) . "'). Please mark it as finished before starting a new one.");
+        }
+
+        $now = date('Y-m-d H:i:s');
+        if (self::isDatetimeDuplicate($userId, $now)) {
+            throw new Exception("Validation Error: Another task entry already exists at the current datetime ($now).");
+        }
+
+        // Generate secure checkin_token for SSO expiry resilience
+        $token = bin2hex(random_bytes(32));
+
+        $pdb->query(
+            "INSERT INTO {$tbTasks} (user_id, item_id, task_name, hours, entry_datetime, status, last_checkin_at, checkin_token) VALUES (?, ?, ?, 0.00, ?, 'in_progress', ?, ?)",
+            [$userId, $itemId, trim($taskName), $now, $now, $token]
+        );
+
+        return $pdb->lastInsertId();
+    }
+
+    public static function checkinTaskResponse($taskId, $userId = null, $action = 'still_working', $checkinToken = null) {
+        $pdb = self::getPdb();
+        $tbTasks = $pdb->getTableName('tasks');
+
+        $task = self::getTaskById($taskId);
+        if (!$task) {
+            throw new Exception("Task not found.");
+        }
+
+        // Verify session user OR valid checkin token (resilient to expired SSO session)
+        $authorized = false;
+        if ($userId && (int)$task['user_id'] === (int)$userId) {
+            $authorized = true;
+        } elseif (!empty($checkinToken) && !empty($task['checkin_token']) && hash_equals($task['checkin_token'], $checkinToken)) {
+            $authorized = true;
+        }
+
+        if (!$authorized) {
+            throw new Exception("Access Denied: Invalid session or check-in token.");
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        if ($action === 'finished') {
+            $startTs = strtotime($task['entry_datetime']);
+            $nowTs = time();
+            $elapsedHours = max(0.1, round(($nowTs - $startTs) / 3600, 2));
+
+            $pdb->query(
+                "UPDATE {$tbTasks} SET status = 'completed', hours = ?, last_checkin_at = ? WHERE id = ?",
+                [$elapsedHours, $now, $taskId]
+            );
+            return 'finished';
+        } else { // 'still_working'
+            $startTs = strtotime($task['entry_datetime']);
+            $nowTs = time();
+            $runningHours = max(0.1, round(($nowTs - $startTs) / 3600, 2));
+
+            $pdb->query(
+                "UPDATE {$tbTasks} SET hours = ?, last_checkin_at = ? WHERE id = ?",
+                [$runningHours, $now, $taskId]
+            );
+            return 'still_working';
+        }
+    }
+
+    public static function getTasksNeedingCheckin() {
+        $pdb = self::getPdb();
+        $tbTasks = $pdb->getTableName('tasks');
+
+        // Query in_progress tasks where last_checkin_at is older than 15 minutes (900 seconds)
+        $fifteenMinsAgo = date('Y-m-d H:i:s', time() - 900);
+        $sql = "SELECT t.* FROM {$tbTasks} t WHERE t.status = 'in_progress' AND (t.last_checkin_at IS NULL OR t.last_checkin_at <= ?)";
+        $stmt = $pdb->query($sql, [$fifteenMinsAgo]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /* ================= SETTINGS & FINANCIAL YEAR METHODS ================= */
 
     public static function getSetting($key, $default = null) {
@@ -84,16 +189,11 @@ class TimeTrackerModel {
     }
 
     public static function getFinancialYearStartConfig() {
-        $month = (int)self::getSetting('fy_start_month', 9); // Default Sept
-        $day = (int)self::getSetting('fy_start_day', 1);    // Default 1st
+        $month = (int)self::getSetting('fy_start_month', 9);
+        $day = (int)self::getSetting('fy_start_day', 1);
         return ['month' => $month, 'day' => $day];
     }
 
-    /**
-     * Given a financial year presentation year (e.g. 2026),
-     * returns ['start_date' => 'YYYY-MM-DD', 'end_date' => 'YYYY-MM-DD'].
-     * Presentation year is the calendar year in which Jan 1st falls during that FY.
-     */
     public static function getFinancialYearDateRange($fyYear) {
         $config = self::getFinancialYearStartConfig();
         $m = $config['month'];
@@ -116,9 +216,6 @@ class TimeTrackerModel {
         ];
     }
 
-    /**
-     * Determines which Financial Year (presentation year) a given date or current date falls into.
-     */
     public static function getCurrentFinancialYear($dateStr = null) {
         if (!$dateStr) $dateStr = date('Y-m-d');
         $ts = strtotime($dateStr);
@@ -378,7 +475,7 @@ class TimeTrackerModel {
         return $stmt->fetch() !== false;
     }
 
-    public static function saveTask($taskId, $userId, $itemId, $taskName, $hours, $entryDatetime) {
+    public static function saveTask($taskId, $userId, $itemId, $taskName, $hours, $entryDatetime, $status = 'completed') {
         $pdb = self::getPdb();
         $tbTasks = $pdb->getTableName('tasks');
 
@@ -387,7 +484,7 @@ class TimeTrackerModel {
         }
 
         $numHours = (float)$hours;
-        if ($numHours <= 0) {
+        if ($numHours <= 0 && $status === 'completed') {
             throw new Exception("Number of hours spent must be greater than 0.");
         }
 
@@ -416,14 +513,14 @@ class TimeTrackerModel {
             }
 
             $pdb->query(
-                "UPDATE {$tbTasks} SET user_id = ?, item_id = ?, task_name = ?, hours = ?, entry_datetime = ? WHERE id = ?",
-                [$userId, $itemId, trim($taskName), $numHours, $formattedDt, $taskId]
+                "UPDATE {$tbTasks} SET user_id = ?, item_id = ?, task_name = ?, hours = ?, entry_datetime = ?, status = ? WHERE id = ?",
+                [$userId, $itemId, trim($taskName), $numHours, $formattedDt, $status, $taskId]
             );
             return $taskId;
         } else {
             $pdb->query(
-                "INSERT INTO {$tbTasks} (user_id, item_id, task_name, hours, entry_datetime) VALUES (?, ?, ?, ?, ?)",
-                [$userId, $itemId, trim($taskName), $numHours, $formattedDt]
+                "INSERT INTO {$tbTasks} (user_id, item_id, task_name, hours, entry_datetime, status, last_checkin_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [$userId, $itemId, trim($taskName), $numHours, $formattedDt, $status, date('Y-m-d H:i:s')]
             );
             return $pdb->lastInsertId();
         }
