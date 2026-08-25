@@ -10,8 +10,18 @@ $filterUserId = isset($_GET['user_id']) && $_GET['user_id'] !== '' ? (int)$_GET[
 $filterCategory = isset($_GET['category']) && $_GET['category'] !== '' ? $_GET['category'] : null;
 $filterItemId = isset($_GET['item_id']) && $_GET['item_id'] !== '' ? (int)$_GET['item_id'] : null;
 $filterTeamId = isset($_GET['team_id']) && $_GET['team_id'] !== '' ? (int)$_GET['team_id'] : null;
-$startDate = $_GET['start_date'] ?? date('Y-m-01');
-$endDate = $_GET['end_date'] ?? date('Y-m-t');
+
+$availableFys = TimeTrackerModel::getAvailableFinancialYears();
+$selectedFy = isset($_GET['fy_year']) && $_GET['fy_year'] !== '' ? (int)$_GET['fy_year'] : null;
+
+if ($selectedFy) {
+    $fyRange = TimeTrackerModel::getFinancialYearDateRange($selectedFy);
+    $startDate = $_GET['start_date'] ?? $fyRange['start_date'];
+    $endDate = $_GET['end_date'] ?? $fyRange['end_date'];
+} else {
+    $startDate = $_GET['start_date'] ?? date('Y-m-01');
+    $endDate = $_GET['end_date'] ?? date('Y-m-t');
+}
 
 $allTasks = TimeTrackerModel::getTasks($filterUserId, $startDate, $endDate, $filterItemId, $filterCategory, $filterTeamId);
 $totalHoursLogged = array_sum(array_column($allTasks, 'hours'));
@@ -186,6 +196,16 @@ if (isset($_GET['supervisor_edit_task'])) {
             <form action="index.php" method="GET" class="row g-2 align-items-end">
                 <input type="hidden" name="route" value="time_tracker_supervisor">
                 <input type="hidden" name="tab" value="<?= htmlspecialchars($activeTab) ?>">
+
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Financial Year</label>
+                    <select name="fy_year" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Custom Date Range</option>
+                        <?php foreach ($availableFys as $fy): ?>
+                            <option value="<?= $fy ?>" <?= $selectedFy == $fy ? 'selected' : '' ?>>FY <?= $fy ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
 
                 <div class="col-md-2">
                     <label class="form-label small fw-bold">Team</label>

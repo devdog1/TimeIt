@@ -59,6 +59,94 @@ class TimeTrackerModel {
             PRIMARY KEY (team_id, user_id),
             KEY idx_user_id (user_id)
         ");
+
+        $pdb->createTable('settings', "
+            setting_key VARCHAR(64) PRIMARY KEY,
+            setting_value TEXT NULL
+        ");
+    }
+
+    /* ================= SETTINGS & FINANCIAL YEAR METHODS ================= */
+
+    public static function getSetting($key, $default = null) {
+        $pdb = self::getPdb();
+        $tbSettings = $pdb->getTableName('settings');
+        $stmt = $pdb->query("SELECT setting_value FROM {$tbSettings} WHERE setting_key = ?", [$key]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return ($row && $row['setting_value'] !== null) ? $row['setting_value'] : $default;
+    }
+
+    public static function saveSetting($key, $value) {
+        $pdb = self::getPdb();
+        $tbSettings = $pdb->getTableName('settings');
+        $pdb->query("INSERT INTO {$tbSettings} (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?", [$key, $value, $value]);
+        return true;
+    }
+
+    public static function getFinancialYearStartConfig() {
+        $month = (int)self::getSetting('fy_start_month', 9); // Default Sept
+        $day = (int)self::getSetting('fy_start_day', 1);    // Default 1st
+        return ['month' => $month, 'day' => $day];
+    }
+
+    /**
+     * Given a financial year presentation year (e.g. 2026),
+     * returns ['start_date' => 'YYYY-MM-DD', 'end_date' => 'YYYY-MM-DD'].
+     * Presentation year is the calendar year in which Jan 1st falls during that FY.
+     */
+    public static function getFinancialYearDateRange($fyYear) {
+        $config = self::getFinancialYearStartConfig();
+        $m = $config['month'];
+        $d = $config['day'];
+
+        if ($m === 1 && $d === 1) {
+            $startDate = sprintf('%04d-01-01', $fyYear);
+            $endDate = sprintf('%04d-12-31', $fyYear);
+        } else {
+            $startDate = sprintf('%04d-%02d-%02d', $fyYear - 1, $m, $d);
+            $startNextTs = strtotime(sprintf('%04d-%02d-%02d', $fyYear, $m, $d));
+            $endTs = strtotime('-1 day', $startNextTs);
+            $endDate = date('Y-m-d', $endTs);
+        }
+
+        return [
+            'fy_year' => (int)$fyYear,
+            'start_date' => $startDate,
+            'end_date' => $endDate
+        ];
+    }
+
+    /**
+     * Determines which Financial Year (presentation year) a given date or current date falls into.
+     */
+    public static function getCurrentFinancialYear($dateStr = null) {
+        if (!$dateStr) $dateStr = date('Y-m-d');
+        $ts = strtotime($dateStr);
+        $calYear = (int)date('Y', $ts);
+
+        $config = self::getFinancialYearStartConfig();
+        $m = $config['month'];
+        $d = $config['day'];
+
+        if ($m === 1 && $d === 1) {
+            return $calYear;
+        }
+
+        $fyStartThisYear = strtotime(sprintf('%04d-%02d-%02d', $calYear, $m, $d));
+        if ($ts >= $fyStartThisYear) {
+            return $calYear + 1;
+        } else {
+            return $calYear;
+        }
+    }
+
+    public static function getAvailableFinancialYears() {
+        $currFy = self::getCurrentFinancialYear();
+        $years = [];
+        for ($i = $currFy - 3; $i <= $currFy + 1; $i++) {
+            $years[] = $i;
+        }
+        return $years;
     }
 
     public static function getAllUsers() {
@@ -159,7 +247,6 @@ class TimeTrackerModel {
             $teamId = $pdb->lastInsertId();
         }
 
-        // Update members
         $pdb->query("DELETE FROM {$tbMembers} WHERE team_id = ?", [$teamId]);
         if (!empty($member_user_ids)) {
             foreach ($member_user_ids as $uid) {
@@ -374,7 +461,7 @@ class TimeTrackerModel {
         if ($teamId) {
             $teamUserIds = self::getTeamUserIds($teamId);
             if (empty($teamUserIds)) {
-                return []; // No team members
+                return [];
             }
             $inClause = implode(',', array_fill(0, count($teamUserIds), '?'));
             $where[] = "t.user_id IN ({$inClause})";

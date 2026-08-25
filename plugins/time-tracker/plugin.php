@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: IT Time Tracker
- * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with team and finance views.
- * Version: 1.1.0
+ * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with financial year reports, teams, and scheduled email reports.
+ * Version: 1.3.0
  * Author: DevDog
  * Permissions: user_access, supervisor_access, finance_access
  * Roles: user:user_access; supervisor:user_access,supervisor_access; finance:user_access,finance_access
@@ -19,6 +19,146 @@ add_action('plugin_activate_time-tracker', function() {
     TimeTrackerModel::installTables();
 });
 
+// Register Scheduler API background task for emailed reports
+add_action('init_scheduler', function($scheduler) {
+    if (method_exists($scheduler, 'registerTask')) {
+        $scheduler->registerTask(
+            'send_scheduled_reports',
+            'time_tracker_send_scheduled_reports',
+            86400, // Daily interval check
+            'time-tracker'
+        );
+    }
+});
+
+// Helper: Generate Previous Week's Team Activities HTML Report
+function time_tracker_generate_weekly_team_report_html($teamId = null) {
+    // Previous week Monday to Sunday
+    $prevMon = date('Y-m-d', strtotime('monday last week'));
+    $prevSun = date('Y-m-d', strtotime('sunday last week'));
+
+    $tasks = TimeTrackerModel::getTasks(null, $prevMon, $prevSun, null, null, $teamId);
+    $totalHours = array_sum(array_column($tasks, 'hours'));
+
+    // Group tasks by team / user
+    $grouped = [];
+    foreach ($tasks as $t) {
+        $uname = $t['user_name'];
+        if (!isset($grouped[$uname])) {
+            $grouped[$uname] = [
+                'user_name' => $uname,
+                'total_hours' => 0.0,
+                'tasks' => []
+            ];
+        }
+        $grouped[$uname]['total_hours'] += (float)$t['hours'];
+        $grouped[$uname]['tasks'][] = $t;
+    }
+
+    ob_start();
+    ?>
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #0d6efd; color: #ffffff; padding: 20px;">
+            <h2 style="margin: 0; font-size: 22px;">📊 Weekly Team Activities Report</h2>
+            <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">
+                Period: <strong><?= date('M d, Y', strtotime($prevMon)) ?> &mdash; <?= date('M d, Y', strtotime($prevSun)) ?></strong> (Previous Week)
+            </p>
+        </div>
+
+        <div style="padding: 20px; background-color: #f8f9fa; border-bottom: 1px solid #ddd;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 16px; font-weight: bold;">Total Team Hours Logged:</span>
+                <span style="font-size: 20px; font-weight: bold; color: #198754; background: #e8f5e9; padding: 4px 12px; border-radius: 20px;">
+                    <?= number_format($totalHours, 2) ?> hrs
+                </span>
+            </div>
+        </div>
+
+        <div style="padding: 20px;">
+            <?php if (empty($grouped)): ?>
+                <p style="color: #6c757d; font-style: italic;">No team tasks were logged for the previous week.</p>
+            <?php else: ?>
+                <?php foreach ($grouped as $userRow): ?>
+                    <div style="margin-bottom: 25px; border: 1px solid #e0e0e0; border-radius: 6px; padding: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0d6efd; padding-bottom: 8px; margin-bottom: 12px;">
+                            <h3 style="margin: 0; font-size: 16px; color: #0d6efd;">
+                                👤 <?= htmlspecialchars($userRow['user_name']) ?>
+                            </h3>
+                            <span style="font-weight: bold; font-size: 14px; color: #198754;">
+                                <?= number_format($userRow['total_hours'], 2) ?> hrs
+                            </span>
+                        </div>
+
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead>
+                                <tr style="background-color: #f1f3f5; text-align: left;">
+                                    <th style="padding: 6px 8px; border: 1px solid #dee2e6;">Date & Time</th>
+                                    <th style="padding: 6px 8px; border: 1px solid #dee2e6;">Category</th>
+                                    <th style="padding: 6px 8px; border: 1px solid #dee2e6;">Applied Item / Project</th>
+                                    <th style="padding: 6px 8px; border: 1px solid #dee2e6;">Task Name</th>
+                                    <th style="padding: 6px 8px; border: 1px solid #dee2e6; text-align: right;">Hours</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($userRow['tasks'] as $tsk): ?>
+                                    <tr>
+                                        <td style="padding: 6px 8px; border: 1px solid #dee2e6;"><?= date('M d, H:i', strtotime($tsk['entry_datetime'])) ?></td>
+                                        <td style="padding: 6px 8px; border: 1px solid #dee2e6;">
+                                            <span style="font-weight: bold; text-transform: uppercase; font-size: 10px; color: #495057;">
+                                                <?= htmlspecialchars($tsk['item_category'] ?? 'N/A') ?>
+                                            </span>
+                                        </td>
+                                        <td style="padding: 6px 8px; border: 1px solid #dee2e6; font-weight: bold;"><?= htmlspecialchars($tsk['item_name'] ?? 'Unassigned') ?></td>
+                                        <td style="padding: 6px 8px; border: 1px solid #dee2e6;"><?= htmlspecialchars($tsk['task_name']) ?></td>
+                                        <td style="padding: 6px 8px; border: 1px solid #dee2e6; text-align: right; font-weight: bold; color: #198754;">
+                                            <?= number_format($tsk['hours'], 2) ?> h
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+        <div style="background-color: #f8f9fa; padding: 12px 20px; text-align: center; font-size: 12px; color: #6c757d; border-top: 1px solid #ddd;">
+            Generated automatically by IT Time Tracker Plugin &bull; Portal Framework
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+// Task callback for background scheduled reports
+function time_tracker_send_scheduled_reports() {
+    $enabled = TimeTrackerModel::getSetting('email_reports_enabled', '0');
+    if ($enabled !== '1') {
+        echo "[TimeTracker] Scheduled emailed reports disabled.\n";
+        return;
+    }
+
+    $recipientsRaw = TimeTrackerModel::getSetting('email_reports_recipients', '');
+    if (empty(trim($recipientsRaw))) {
+        echo "[TimeTracker] No email report recipients configured.\n";
+        return;
+    }
+
+    $recipients = array_map('trim', explode(',', $recipientsRaw));
+    $reportHtml = time_tracker_generate_weekly_team_report_html();
+
+    $logMsg = sprintf(
+        "[TimeTracker Scheduled Report] Generated Previous Week's Team Activities HTML report for %d recipients (%s). Report size: %d bytes.\n",
+        count($recipients),
+        implode(', ', $recipients),
+        strlen($reportHtml)
+    );
+
+    echo $logMsg;
+    if (function_exists('log_action')) {
+        log_action('TIME_TRACKER_SCHEDULED_REPORT', ['details' => $logMsg]);
+    }
+}
+
 // Register navigation links
 add_filter('theme_nav_links', function($links) {
     if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
@@ -34,6 +174,7 @@ add_filter('theme_nav_links', function($links) {
     if (has_permission('time_tracker_supervisor_access') || has_role('administrator')) {
         $children[] = ['label' => 'Teams Management', 'icon' => 'fa-solid fa-users-gear', 'route' => 'time_tracker_teams'];
         $children[] = ['label' => 'Supervisor View', 'icon' => 'fa-solid fa-user-shield', 'route' => 'time_tracker_supervisor'];
+        $children[] = ['label' => 'Plugin Settings', 'icon' => 'fa-solid fa-sliders', 'route' => 'time_tracker_settings'];
     }
 
     if (has_permission('time_tracker_finance_access') || has_role('administrator')) {
@@ -61,7 +202,6 @@ add_action('index_dashboard_widgets', function($userContext) {
     $recentTasks = TimeTrackerModel::getTasks($userId, date('Y-m-d'), date('Y-m-d'));
     $todayHours = array_sum(array_column($recentTasks, 'hours'));
 
-    // Check if user is lead on any projects
     $leadProjects = TimeTrackerModel::getProjectsLedByUser($userId);
     ?>
 
@@ -166,7 +306,6 @@ function time_tracker_handle_posts() {
             $hours = (float)($_POST['hours'] ?? 0);
             $entryDatetime = $_POST['entry_datetime'] ?? '';
 
-            // Security check: non-supervisors can only edit their own tasks
             if ($taskId > 0 && !$isSupervisor) {
                 $existingTask = TimeTrackerModel::getTaskById($taskId);
                 if (!$existingTask || $existingTask['user_id'] != $userId) {
@@ -174,7 +313,6 @@ function time_tracker_handle_posts() {
                 }
             }
 
-            // If supervisor editing someone else's task
             $targetUserId = $userId;
             if ($isSupervisor && isset($_POST['user_id']) && (int)$_POST['user_id'] > 0) {
                 $targetUserId = (int)$_POST['user_id'];
@@ -225,6 +363,30 @@ function time_tracker_handle_posts() {
             $teamId = (int)($_POST['team_id'] ?? 0);
             TimeTrackerModel::deleteTeam($teamId);
             $_SESSION['tt_success'] = "Team deleted successfully.";
+        }
+        elseif ($action === 'save_settings') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+
+            $fyMonth = (int)($_POST['fy_start_month'] ?? 9);
+            $fyDay = (int)($_POST['fy_start_day'] ?? 1);
+            $emailEnabled = isset($_POST['email_reports_enabled']) ? '1' : '0';
+            $emailFreq = $_POST['email_reports_frequency'] ?? 'weekly';
+            $emailRecipients = $_POST['email_reports_recipients'] ?? '';
+            $emailType = $_POST['email_reports_type'] ?? 'finance';
+
+            TimeTrackerModel::saveSetting('fy_start_month', $fyMonth);
+            TimeTrackerModel::saveSetting('fy_start_day', $fyDay);
+            TimeTrackerModel::saveSetting('email_reports_enabled', $emailEnabled);
+            TimeTrackerModel::saveSetting('email_reports_frequency', $emailFreq);
+            TimeTrackerModel::saveSetting('email_reports_recipients', $emailRecipients);
+            TimeTrackerModel::saveSetting('email_reports_type', $emailType);
+
+            $_SESSION['tt_success'] = "Plugin settings and email report configurations saved successfully!";
+        }
+        elseif ($action === 'trigger_test_email') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            time_tracker_send_scheduled_reports();
+            $_SESSION['tt_success'] = "Example weekly team activities report triggered successfully!";
         }
     } catch (Exception $e) {
         $_SESSION['tt_error'] = $e->getMessage();
@@ -307,6 +469,14 @@ add_action('register_routes', function() {
         }
         time_tracker_handle_posts();
         require_once __DIR__ . '/views/teams-view.php';
+    });
+
+    register_route('time_tracker_settings', function() {
+        if (!has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+            die('Access Denied: Supervisor privileges required.');
+        }
+        time_tracker_handle_posts();
+        require_once __DIR__ . '/views/settings-view.php';
     });
 
     register_route('time_tracker_supervisor', function() {
