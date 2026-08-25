@@ -2,16 +2,18 @@
 // Supervisor View with permissions checks, multi-view filters, summary cards, edit tasks modal/inline support
 $users = TimeTrackerModel::getAllUsers();
 $items = TimeTrackerModel::getItems();
+$teams = TimeTrackerModel::getTeams();
 
 $activeTab = $_GET['tab'] ?? 'users'; // 'users', 'projects', 'categories', 'all_tasks'
 
 $filterUserId = isset($_GET['user_id']) && $_GET['user_id'] !== '' ? (int)$_GET['user_id'] : null;
 $filterCategory = isset($_GET['category']) && $_GET['category'] !== '' ? $_GET['category'] : null;
 $filterItemId = isset($_GET['item_id']) && $_GET['item_id'] !== '' ? (int)$_GET['item_id'] : null;
+$filterTeamId = isset($_GET['team_id']) && $_GET['team_id'] !== '' ? (int)$_GET['team_id'] : null;
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-t');
 
-$allTasks = TimeTrackerModel::getTasks($filterUserId, $startDate, $endDate, $filterItemId, $filterCategory);
+$allTasks = TimeTrackerModel::getTasks($filterUserId, $startDate, $endDate, $filterItemId, $filterCategory, $filterTeamId);
 $totalHoursLogged = array_sum(array_column($allTasks, 'hours'));
 
 // Aggregate hours by category
@@ -185,7 +187,19 @@ if (isset($_GET['supervisor_edit_task'])) {
                 <input type="hidden" name="route" value="time_tracker_supervisor">
                 <input type="hidden" name="tab" value="<?= htmlspecialchars($activeTab) ?>">
 
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Team</label>
+                    <select name="team_id" class="form-select form-select-sm">
+                        <option value="">All Teams</option>
+                        <?php foreach ($teams as $t): ?>
+                            <option value="<?= $t['id'] ?>" <?= $filterTeamId == $t['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($t['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
                     <label class="form-label small fw-bold">User</label>
                     <select name="user_id" class="form-select form-select-sm">
                         <option value="">All Users</option>

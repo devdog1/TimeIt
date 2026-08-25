@@ -23,3 +23,18 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_tasks (
     KEY idx_item_id (item_id),
     KEY idx_entry_datetime (entry_datetime)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS plug_time_tracker_teams (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    supervisor_user_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS plug_time_tracker_team_members (
+    team_id INT NOT NULL,
+    user_id INT NOT NULL,
+    PRIMARY KEY (team_id, user_id),
+    KEY idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

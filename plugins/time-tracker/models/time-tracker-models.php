@@ -44,6 +44,21 @@ class TimeTrackerModel {
             KEY idx_item_id (item_id),
             KEY idx_entry_datetime (entry_datetime)
         ");
+
+        $pdb->createTable('teams', "
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT NULL,
+            supervisor_user_id INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ");
+
+        $pdb->createTable('team_members', "
+            team_id INT NOT NULL,
+            user_id INT NOT NULL,
+            PRIMARY KEY (team_id, user_id),
+            KEY idx_user_id (user_id)
+        ");
     }
 
     public static function getAllUsers() {
@@ -54,7 +69,6 @@ class TimeTrackerModel {
             if (!empty($users)) return $users;
         } catch (Exception $e) {}
 
-        // Fallback array if table doesn't exist in testing env
         $currId = $_SESSION['user_id'] ?? 1;
         return [
             ['id' => $currId, 'display_name' => 'Current User', 'email' => 'user@example.com']
@@ -75,6 +89,101 @@ class TimeTrackerModel {
         return "User #" . $userId;
     }
 
+    /* ================= TEAMS METHODS ================= */
+
+    public static function getTeams() {
+        $pdb = self::getPdb();
+        $tbTeams = $pdb->getTableName('teams');
+        $stmt = $pdb->query("SELECT * FROM {$tbTeams} ORDER BY name ASC");
+        $teams = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($teams as &$t) {
+            $t['supervisor_name'] = self::getUserName($t['supervisor_user_id']);
+            $t['members'] = self::getTeamMembers($t['id']);
+            $t['member_count'] = count($t['members']);
+        }
+        return $teams;
+    }
+
+    public static function getTeamById($id) {
+        $pdb = self::getPdb();
+        $tbTeams = $pdb->getTableName('teams');
+        $stmt = $pdb->query("SELECT * FROM {$tbTeams} WHERE id = ?", [$id]);
+        $team = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($team) {
+            $team['supervisor_name'] = self::getUserName($team['supervisor_user_id']);
+            $team['members'] = self::getTeamMembers($team['id']);
+        }
+        return $team;
+    }
+
+    public static function getTeamMembers($teamId) {
+        $pdb = self::getPdb();
+        $tbMembers = $pdb->getTableName('team_members');
+        $stmt = $pdb->query("SELECT user_id FROM {$tbMembers} WHERE team_id = ?", [$teamId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $result = [];
+        foreach ($rows as $uid) {
+            $result[] = [
+                'user_id' => $uid,
+                'user_name' => self::getUserName($uid)
+            ];
+        }
+        return $result;
+    }
+
+    public static function getTeamUserIds($teamId) {
+        $pdb = self::getPdb();
+        $tbMembers = $pdb->getTableName('team_members');
+        $stmt = $pdb->query("SELECT user_id FROM {$tbMembers} WHERE team_id = ?", [$teamId]);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    public static function saveTeam($id, $name, $description = '', $supervisor_user_id = null, $member_user_ids = []) {
+        $pdb = self::getPdb();
+        $tbTeams = $pdb->getTableName('teams');
+        $tbMembers = $pdb->getTableName('team_members');
+
+        if (empty(trim($name))) {
+            throw new Exception("Team name cannot be empty.");
+        }
+
+        $supId = ($supervisor_user_id !== null && $supervisor_user_id !== '' && (int)$supervisor_user_id > 0) ? (int)$supervisor_user_id : null;
+
+        if ($id > 0) {
+            $pdb->query("UPDATE {$tbTeams} SET name = ?, description = ?, supervisor_user_id = ? WHERE id = ?", [trim($name), trim($description), $supId, $id]);
+            $teamId = $id;
+        } else {
+            $pdb->query("INSERT INTO {$tbTeams} (name, description, supervisor_user_id) VALUES (?, ?, ?)", [trim($name), trim($description), $supId]);
+            $teamId = $pdb->lastInsertId();
+        }
+
+        // Update members
+        $pdb->query("DELETE FROM {$tbMembers} WHERE team_id = ?", [$teamId]);
+        if (!empty($member_user_ids)) {
+            foreach ($member_user_ids as $uid) {
+                if ((int)$uid > 0) {
+                    $pdb->query("INSERT IGNORE INTO {$tbMembers} (team_id, user_id) VALUES (?, ?)", [$teamId, (int)$uid]);
+                }
+            }
+        }
+
+        return $teamId;
+    }
+
+    public static function deleteTeam($id) {
+        $pdb = self::getPdb();
+        $tbTeams = $pdb->getTableName('teams');
+        $tbMembers = $pdb->getTableName('team_members');
+
+        $pdb->query("DELETE FROM {$tbMembers} WHERE team_id = ?", [$id]);
+        $pdb->query("DELETE FROM {$tbTeams} WHERE id = ?", [$id]);
+        return true;
+    }
+
+    /* ================= ITEMS & PROJECTS METHODS ================= */
+
     public static function getItems($category = null) {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
@@ -86,8 +195,25 @@ class TimeTrackerModel {
         }
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Calculate logged hours for each item
         $tbTasks = $pdb->getTableName('tasks');
+        foreach ($items as &$item) {
+            $sumStmt = $pdb->query("SELECT SUM(hours) as total_hours FROM {$tbTasks} WHERE item_id = ?", [$item['id']]);
+            $sumRow = $sumStmt->fetch(PDO::FETCH_ASSOC);
+            $item['actual_hours'] = $sumRow && $sumRow['total_hours'] ? (float)$sumRow['total_hours'] : 0.0;
+            $item['lead_user_name'] = self::getUserName($item['lead_user_id']);
+        }
+
+        return $items;
+    }
+
+    public static function getProjectsLedByUser($userId) {
+        $pdb = self::getPdb();
+        $tbItems = $pdb->getTableName('items');
+        $tbTasks = $pdb->getTableName('tasks');
+
+        $stmt = $pdb->query("SELECT * FROM {$tbItems} WHERE lead_user_id = ? ORDER BY name ASC", [$userId]);
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
         foreach ($items as &$item) {
             $sumStmt = $pdb->query("SELECT SUM(hours) as total_hours FROM {$tbTasks} WHERE item_id = ?", [$item['id']]);
             $sumRow = $sumStmt->fetch(PDO::FETCH_ASSOC);
@@ -143,11 +269,12 @@ class TimeTrackerModel {
         $tbItems = $pdb->getTableName('items');
         $tbTasks = $pdb->getTableName('tasks');
 
-        // Delete linked tasks first
         $pdb->query("DELETE FROM {$tbTasks} WHERE item_id = ?", [$id]);
         $pdb->query("DELETE FROM {$tbItems} WHERE id = ?", [$id]);
         return true;
     }
+
+    /* ================= TASKS METHODS ================= */
 
     public static function isDatetimeDuplicate($userId, $entryDatetime, $excludeTaskId = 0) {
         $pdb = self::getPdb();
@@ -181,7 +308,6 @@ class TimeTrackerModel {
             throw new Exception("Please select a valid Project, Support, or Maintenance item.");
         }
 
-        // Validate item exists
         $item = self::getItemById($itemId);
         if (!$item) {
             throw new Exception("Selected Project/Category item does not exist.");
@@ -192,13 +318,11 @@ class TimeTrackerModel {
             throw new Exception("Invalid date and time provided.");
         }
 
-        // Validate datetime collision for user
         if (self::isDatetimeDuplicate($userId, $formattedDt, $taskId)) {
             throw new Exception("Validation Error: User already has another task logged for exact datetime (" . date('Y-m-d H:i', strtotime($formattedDt)) . ").");
         }
 
         if ($taskId > 0) {
-            // Verify existing task ownership if updating
             $existingTask = self::getTaskById($taskId);
             if (!$existingTask) {
                 throw new Exception("Task not found.");
@@ -235,7 +359,7 @@ class TimeTrackerModel {
         return $task;
     }
 
-    public static function getTasks($userId = null, $startDate = null, $endDate = null, $itemId = null, $category = null) {
+    public static function getTasks($userId = null, $startDate = null, $endDate = null, $itemId = null, $category = null, $teamId = null) {
         $pdb = self::getPdb();
         $tbTasks = $pdb->getTableName('tasks');
         $tbItems = $pdb->getTableName('items');
@@ -246,6 +370,17 @@ class TimeTrackerModel {
         if ($userId) {
             $where[] = "t.user_id = ?";
             $params[] = $userId;
+        }
+        if ($teamId) {
+            $teamUserIds = self::getTeamUserIds($teamId);
+            if (empty($teamUserIds)) {
+                return []; // No team members
+            }
+            $inClause = implode(',', array_fill(0, count($teamUserIds), '?'));
+            $where[] = "t.user_id IN ({$inClause})";
+            foreach ($teamUserIds as $tuid) {
+                $params[] = $tuid;
+            }
         }
         if ($startDate) {
             $where[] = "t.entry_datetime >= ?";

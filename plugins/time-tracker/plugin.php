@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: IT Time Tracker
- * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects.
- * Version: 1.0.0
+ * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with team and finance views.
+ * Version: 1.1.0
  * Author: DevDog
- * Permissions: user_access, supervisor_access
- * Roles: user:user_access; supervisor:user_access,supervisor_access
+ * Permissions: user_access, supervisor_access, finance_access
+ * Roles: user:user_access; supervisor:user_access,supervisor_access; finance:user_access,finance_access
  */
 
 if (!defined('APP_ROOT')) {
@@ -21,44 +21,51 @@ add_action('plugin_activate_time-tracker', function() {
 
 // Register navigation links
 add_filter('theme_nav_links', function($links) {
-    if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+    if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
         return $links;
     }
 
-    $timeTrackerNav = [
-        'label' => 'Time Tracker',
-        'icon'  => 'fa-solid fa-clock',
-        'route' => 'time_tracker',
-        'children' => [
-            ['label' => 'My Tasks', 'icon' => 'fa-solid fa-list-check', 'route' => 'time_tracker'],
-            ['label' => 'Calendar View', 'icon' => 'fa-solid fa-calendar-days', 'route' => 'time_tracker_calendar'],
-            ['label' => 'Projects & Categories', 'icon' => 'fa-solid fa-folder-tree', 'route' => 'time_tracker_items']
-        ]
+    $children = [
+        ['label' => 'My Tasks', 'icon' => 'fa-solid fa-list-check', 'route' => 'time_tracker'],
+        ['label' => 'Calendar View', 'icon' => 'fa-solid fa-calendar-days', 'route' => 'time_tracker_calendar'],
+        ['label' => 'Projects & Categories', 'icon' => 'fa-solid fa-folder-tree', 'route' => 'time_tracker_items']
     ];
 
     if (has_permission('time_tracker_supervisor_access') || has_role('administrator')) {
-        $timeTrackerNav['children'][] = [
-            'label' => 'Supervisor View',
-            'icon'  => 'fa-solid fa-user-shield',
-            'route' => 'time_tracker_supervisor'
-        ];
+        $children[] = ['label' => 'Teams Management', 'icon' => 'fa-solid fa-users-gear', 'route' => 'time_tracker_teams'];
+        $children[] = ['label' => 'Supervisor View', 'icon' => 'fa-solid fa-user-shield', 'route' => 'time_tracker_supervisor'];
     }
 
-    $links[] = $timeTrackerNav;
+    if (has_permission('time_tracker_finance_access') || has_role('administrator')) {
+        $children[] = ['label' => 'Finance View (Read-Only)', 'icon' => 'fa-solid fa-file-invoice-dollar', 'route' => 'time_tracker_finance'];
+    }
+
+    $links[] = [
+        'label' => 'Time Tracker',
+        'icon'  => 'fa-solid fa-clock',
+        'route' => 'time_tracker',
+        'children' => $children
+    ];
+
     return $links;
 });
 
-// Dashboard quick-add widget on home screen
+// Dashboard widgets on home screen
 add_action('index_dashboard_widgets', function($userContext) {
-    if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+    if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
         return;
     }
 
-    $items = TimeTrackerModel::getItems();
     $userId = $_SESSION['user_id'] ?? 0;
+    $items = TimeTrackerModel::getItems();
     $recentTasks = TimeTrackerModel::getTasks($userId, date('Y-m-d'), date('Y-m-d'));
     $todayHours = array_sum(array_column($recentTasks, 'hours'));
+
+    // Check if user is lead on any projects
+    $leadProjects = TimeTrackerModel::getProjectsLedByUser($userId);
     ?>
+
+    <!-- Quick Time Tracker Log Widget -->
     <div class="col-md-6 mb-4">
         <div class="card shadow-sm border-start border-4 border-primary h-100">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -97,6 +104,43 @@ add_action('index_dashboard_widgets', function($userContext) {
             </div>
         </div>
     </div>
+
+    <!-- Project Lead Status Widget -->
+    <?php if (!empty($leadProjects)): ?>
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm border-start border-4 border-success h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0 text-success">
+                    <i class="fa-solid fa-user-tie me-1"></i> Projects You Lead (<?= count($leadProjects) ?>)
+                </h6>
+                <a href="index.php?route=time_tracker_items" class="btn btn-sm btn-outline-success py-0">Manage</a>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush small">
+                    <?php foreach ($leadProjects as $lp):
+                        $est = $lp['estimated_hours'];
+                        $act = $lp['actual_hours'];
+                        $pct = ($est && $est > 0) ? min(100, round(($act / $est) * 100)) : 0;
+                    ?>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong class="text-dark d-block"><?= htmlspecialchars($lp['name']) ?></strong>
+                                <small class="text-muted">Category: <?= ucfirst($lp['category']) ?></small>
+                            </div>
+                            <div class="text-end">
+                                <span class="fw-bold text-success d-block"><?= number_format($act, 2) ?> hrs logged</span>
+                                <?php if ($est && $est > 0): ?>
+                                    <small class="text-muted"><?= $pct ?>% of <?= number_format($est, 2) ?>h est.</small>
+                                <?php endif; ?>
+                            </div>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php
 });
 
@@ -165,20 +209,76 @@ function time_tracker_handle_posts() {
             TimeTrackerModel::deleteItem($itemId);
             $_SESSION['tt_success'] = "Item and linked tasks deleted successfully.";
         }
+        elseif ($action === 'save_team') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required to manage teams.");
+            $teamId = (int)($_POST['team_id'] ?? 0);
+            $name = $_POST['name'] ?? '';
+            $description = $_POST['description'] ?? '';
+            $supervisorUserId = $_POST['supervisor_user_id'] !== '' ? (int)$_POST['supervisor_user_id'] : null;
+            $memberUserIds = isset($_POST['member_user_ids']) && is_array($_POST['member_user_ids']) ? $_POST['member_user_ids'] : [];
+
+            TimeTrackerModel::saveTeam($teamId, $name, $description, $supervisorUserId, $memberUserIds);
+            $_SESSION['tt_success'] = ($teamId > 0) ? "Team updated successfully!" : "New team created successfully!";
+        }
+        elseif ($action === 'delete_team') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $teamId = (int)($_POST['team_id'] ?? 0);
+            TimeTrackerModel::deleteTeam($teamId);
+            $_SESSION['tt_success'] = "Team deleted successfully.";
+        }
     } catch (Exception $e) {
         $_SESSION['tt_error'] = $e->getMessage();
     }
 
-    // Redirect to preserve GET route and display flash message
     $redirectRoute = $_GET['route'] ?? 'time_tracker';
     redirect("index.php?route=" . urlencode($redirectRoute));
     exit;
 }
 
+// CSV Export Helper
+function time_tracker_export_csv() {
+    if (!isset($_GET['export_csv']) || $_GET['export_csv'] !== '1') return;
+
+    if (!has_permission('time_tracker_finance_access') && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+        die('Access Denied');
+    }
+
+    $filterUserId = isset($_GET['user_id']) && $_GET['user_id'] !== '' ? (int)$_GET['user_id'] : null;
+    $filterCategory = isset($_GET['category']) && $_GET['category'] !== '' ? $_GET['category'] : null;
+    $filterItemId = isset($_GET['item_id']) && $_GET['item_id'] !== '' ? (int)$_GET['item_id'] : null;
+    $filterTeamId = isset($_GET['team_id']) && $_GET['team_id'] !== '' ? (int)$_GET['team_id'] : null;
+    $startDate = $_GET['start_date'] ?? null;
+    $endDate = $_GET['end_date'] ?? null;
+
+    $tasks = TimeTrackerModel::getTasks($filterUserId, $startDate, $endDate, $filterItemId, $filterCategory, $filterTeamId);
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=time_tracker_report_' . date('Y-m-d') . '.csv');
+
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Task ID', 'User Name', 'Date & Time', 'Category', 'Item / Project Name', 'Task Description', 'Hours Spent']);
+
+    foreach ($tasks as $t) {
+        fputcsv($output, [
+            $t['id'],
+            $t['user_name'],
+            $t['entry_datetime'],
+            ucfirst($t['item_category'] ?? ''),
+            $t['item_name'] ?? 'Unassigned',
+            $t['task_name'],
+            number_format($t['hours'], 2)
+        ]);
+    }
+    fclose($output);
+    exit;
+}
+
 // Register routes
 add_action('register_routes', function() {
+    time_tracker_export_csv();
+
     register_route('time_tracker', function() {
-        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
             die('Access Denied: You do not have permission to access Time Tracker.');
         }
         time_tracker_handle_posts();
@@ -186,7 +286,7 @@ add_action('register_routes', function() {
     });
 
     register_route('time_tracker_calendar', function() {
-        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
             die('Access Denied: You do not have permission to access Time Tracker.');
         }
         time_tracker_handle_posts();
@@ -194,11 +294,19 @@ add_action('register_routes', function() {
     });
 
     register_route('time_tracker_items', function() {
-        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
             die('Access Denied: You do not have permission to access Time Tracker.');
         }
         time_tracker_handle_posts();
         require_once __DIR__ . '/views/items-view.php';
+    });
+
+    register_route('time_tracker_teams', function() {
+        if (!has_permission('time_tracker_supervisor_access') && !has_role('administrator')) {
+            die('Access Denied: Supervisor privileges required.');
+        }
+        time_tracker_handle_posts();
+        require_once __DIR__ . '/views/teams-view.php';
     });
 
     register_route('time_tracker_supervisor', function() {
@@ -207,5 +315,12 @@ add_action('register_routes', function() {
         }
         time_tracker_handle_posts();
         require_once __DIR__ . '/views/supervisor-view.php';
+    });
+
+    register_route('time_tracker_finance', function() {
+        if (!has_permission('time_tracker_finance_access') && !has_role('administrator')) {
+            die('Access Denied: Finance read-only permissions required.');
+        }
+        require_once __DIR__ . '/views/finance-view.php';
     });
 });
