@@ -27,9 +27,11 @@ class TimeTrackerModel {
             estimated_hours DECIMAL(8,2) NULL,
             lead_user_id INT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
+            is_archived TINYINT(1) NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY idx_category (category),
-            KEY idx_is_active (is_active)
+            KEY idx_is_active (is_active),
+            KEY idx_is_archived (is_archived)
         ");
 
         $pdb->createTable('tasks', "
@@ -383,7 +385,7 @@ class TimeTrackerModel {
         return $cats;
     }
 
-    public static function getItems($category = null, $activeOnly = false) {
+    public static function getItems($category = null, $activeOnly = false, $includeArchived = false) {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
 
@@ -397,6 +399,7 @@ class TimeTrackerModel {
 
         if ($activeOnly) {
             $where[] = "is_active = 1";
+            $where[] = "is_archived = 0";
             $enabledCats = self::getEnabledCategoryTypes();
             if (empty($enabledCats)) {
                 return [];
@@ -406,6 +409,8 @@ class TimeTrackerModel {
             foreach ($enabledCats as $ec) {
                 $params[] = $ec;
             }
+        } elseif (!$includeArchived) {
+            $where[] = "is_archived = 0";
         }
 
         $whereSql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
@@ -428,6 +433,13 @@ class TimeTrackerModel {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
         $pdb->query("UPDATE {$tbItems} SET is_active = ? WHERE id = ?", [$isActive ? 1 : 0, $id]);
+        return true;
+    }
+
+    public static function archiveItem($id, $isArchived) {
+        $pdb = self::getPdb();
+        $tbItems = $pdb->getTableName('items');
+        $pdb->query("UPDATE {$tbItems} SET is_archived = ? WHERE id = ?", [$isArchived ? 1 : 0, $id]);
         return true;
     }
 

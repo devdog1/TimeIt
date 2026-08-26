@@ -515,6 +515,12 @@ function time_tracker_handle_posts() {
             TimeTrackerModel::toggleItemActive($itemId, $targetStatus);
             $_SESSION['tt_success'] = ($targetStatus === 1) ? "Category item enabled." : "Category item disabled.";
         }
+        elseif ($action === 'archive_item') {
+            $itemId = (int)($_POST['item_id'] ?? 0);
+            $targetArchive = (int)($_POST['target_archive'] ?? 1);
+            TimeTrackerModel::archiveItem($itemId, $targetArchive);
+            $_SESSION['tt_success'] = ($targetArchive === 1) ? "Project/Item archived! It is now hidden from task creation dropdowns." : "Project/Item unarchived and restored to active items.";
+        }
         elseif ($action === 'delete_item') {
             $itemId = (int)($_POST['item_id'] ?? 0);
             TimeTrackerModel::deleteItem($itemId);

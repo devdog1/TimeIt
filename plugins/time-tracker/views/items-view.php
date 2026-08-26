@@ -1,5 +1,6 @@
 <?php
-$items = TimeTrackerModel::getItems();
+$showArchived = isset($_GET['show_archived']) && $_GET['show_archived'] === '1';
+$items = TimeTrackerModel::getItems(null, false, $showArchived);
 $users = TimeTrackerModel::getAllUsers();
 
 $editItem = null;
@@ -15,7 +16,16 @@ if (isset($_GET['edit_item'])) {
             <h3 class="fw-bold mb-1"><i class="fa-solid fa-folder-tree text-primary me-2"></i> Projects & Categories</h3>
             <p class="text-muted small mb-0">Manage Projects, Support Activities, and Maintenance Activities for time tracking.</p>
         </div>
-        <div>
+        <div class="d-flex gap-2">
+            <?php if ($showArchived): ?>
+                <a href="index.php?route=time_tracker_items" class="btn btn-outline-primary btn-sm">
+                    <i class="fa-solid fa-folder-open me-1"></i> View Active Projects
+                </a>
+            <?php else: ?>
+                <a href="index.php?route=time_tracker_items&show_archived=1" class="btn btn-outline-secondary btn-sm">
+                    <i class="fa-solid fa-box-archive me-1"></i> View Archived Projects
+                </a>
+            <?php endif; ?>
             <a href="index.php?route=time_tracker" class="btn btn-outline-secondary btn-sm">
                 <i class="fa-solid fa-arrow-left me-1"></i> Back to Dashboard
             </a>
@@ -113,8 +123,12 @@ if (isset($_GET['edit_item'])) {
         <!-- Items Table -->
         <div class="col-lg-8">
             <div class="card shadow-sm border-0">
-                <div class="card-header bg-light py-3">
-                    <h5 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-list-check me-2"></i> Configured Categories & Items</h5>
+                <div class="card-header bg-light py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-secondary">
+                        <i class="fa-solid <?= $showArchived ? 'fa-box-archive' : 'fa-list-check' ?> me-2"></i>
+                        <?= $showArchived ? 'Archived Projects & Items' : 'Active Projects & Categories' ?>
+                    </h5>
+                    <span class="badge bg-secondary"><?= count($items) ?> Items</span>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -133,7 +147,9 @@ if (isset($_GET['edit_item'])) {
                             <tbody>
                                 <?php if (empty($items)): ?>
                                     <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">No category items created yet.</td>
+                                        <td colspan="7" class="text-center py-4 text-muted">
+                                            <?= $showArchived ? 'No archived projects found.' : 'No active category items created yet.' ?>
+                                        </td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($items as $item):
@@ -143,10 +159,13 @@ if (isset($_GET['edit_item'])) {
                                         elseif ($item['category'] === 'maintenance') $bClass = 'bg-warning text-dark';
 
                                         $isActive = ($item['is_active'] ?? 1) == 1;
+                                        $isArchived = ($item['is_archived'] ?? 0) == 1;
                                     ?>
-                                        <tr class="<?= !$isActive ? 'table-light text-muted' : '' ?>">
+                                        <tr class="<?= $isArchived ? 'table-warning text-muted' : (!$isActive ? 'table-light text-muted' : '') ?>">
                                             <td>
-                                                <?php if ($isActive): ?>
+                                                <?php if ($isArchived): ?>
+                                                    <span class="badge bg-warning text-dark"><i class="fa-solid fa-box-archive me-1"></i> Archived</span>
+                                                <?php elseif ($isActive): ?>
                                                     <span class="badge bg-success"><i class="fa-solid fa-circle-check me-1"></i> Active</span>
                                                 <?php else: ?>
                                                     <span class="badge bg-secondary"><i class="fa-solid fa-ban me-1"></i> Disabled</span>
@@ -169,15 +188,29 @@ if (isset($_GET['edit_item'])) {
                                                 <?= number_format($item['actual_hours'], 2) ?> hrs
                                             </td>
                                             <td class="text-end">
+                                                <!-- Archive / Unarchive Button -->
                                                 <form action="index.php?route=time_tracker_items" method="POST" class="d-inline">
                                                     <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
-                                                    <input type="hidden" name="action" value="toggle_item_status">
+                                                    <input type="hidden" name="action" value="archive_item">
                                                     <input type="hidden" name="item_id" value="<?= $item['id'] ?>">
-                                                    <input type="hidden" name="target_status" value="<?= $isActive ? '0' : '1' ?>">
-                                                    <button type="submit" class="btn btn-sm <?= $isActive ? 'btn-outline-warning' : 'btn-outline-success' ?> me-1" title="<?= $isActive ? 'Disable Item' : 'Enable Item' ?>">
-                                                        <i class="fa-solid <?= $isActive ? 'fa-ban' : 'fa-circle-check' ?>"></i>
+                                                    <input type="hidden" name="target_archive" value="<?= $isArchived ? '0' : '1' ?>">
+                                                    <button type="submit" class="btn btn-sm <?= $isArchived ? 'btn-outline-success' : 'btn-outline-secondary' ?> me-1" title="<?= $isArchived ? 'Unarchive Project' : 'Archive Project' ?>">
+                                                        <i class="fa-solid <?= $isArchived ? 'fa-box-open' : 'fa-box-archive' ?>"></i>
                                                     </button>
                                                 </form>
+
+                                                <!-- Enable / Disable Button -->
+                                                <?php if (!$isArchived): ?>
+                                                    <form action="index.php?route=time_tracker_items" method="POST" class="d-inline">
+                                                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                                        <input type="hidden" name="action" value="toggle_item_status">
+                                                        <input type="hidden" name="item_id" value="<?= $item['id'] ?>">
+                                                        <input type="hidden" name="target_status" value="<?= $isActive ? '0' : '1' ?>">
+                                                        <button type="submit" class="btn btn-sm <?= $isActive ? 'btn-outline-warning' : 'btn-outline-success' ?> me-1" title="<?= $isActive ? 'Disable Item' : 'Enable Item' ?>">
+                                                            <i class="fa-solid <?= $isActive ? 'fa-ban' : 'fa-circle-check' ?>"></i>
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
 
                                                 <a href="index.php?route=time_tracker_items&edit_item=<?= $item['id'] ?>" class="btn btn-sm btn-outline-primary me-1">
                                                     <i class="fa-solid fa-pen-to-square"></i>
