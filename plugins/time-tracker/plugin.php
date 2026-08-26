@@ -323,10 +323,14 @@ add_filter('theme_nav_links', function($links) {
         ['label' => 'Projects & Categories', 'icon' => 'fa-solid fa-folder-tree', 'route' => 'time_tracker_items']
     ];
 
+    $enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
+
     if (has_permission('time_tracker_supervisor_access') || has_role('administrator')) {
         $children[] = ['label' => 'Teams Management', 'icon' => 'fa-solid fa-users-gear', 'route' => 'time_tracker_teams'];
         $children[] = ['label' => 'Supervisor View', 'icon' => 'fa-solid fa-user-shield', 'route' => 'time_tracker_supervisor'];
-        $children[] = ['label' => 'Timesheet & Approval', 'icon' => 'fa-solid fa-file-signature', 'route' => 'time_tracker_timesheet'];
+        if ($enableTimesheets === '1') {
+            $children[] = ['label' => 'Timesheet & Approval', 'icon' => 'fa-solid fa-file-signature', 'route' => 'time_tracker_timesheet'];
+        }
         $children[] = ['label' => 'Plugin Settings', 'icon' => 'fa-solid fa-sliders', 'route' => 'time_tracker_settings'];
     }
 
@@ -536,12 +540,17 @@ function time_tracker_handle_posts() {
             $emailRecipients = $_POST['email_reports_recipients'] ?? '';
             $emailType = $_POST['email_reports_type'] ?? 'finance';
 
+            $enableTimesheets = isset($_POST['enable_timesheets']) ? '1' : '0';
+            $enableBillableOvertime = isset($_POST['enable_billable_overtime']) ? '1' : '0';
+
             TimeTrackerModel::saveSetting('fy_start_month', $fyMonth);
             TimeTrackerModel::saveSetting('fy_start_day', $fyDay);
             TimeTrackerModel::saveSetting('email_reports_enabled', $emailEnabled);
             TimeTrackerModel::saveSetting('email_reports_frequency', $emailFreq);
             TimeTrackerModel::saveSetting('email_reports_recipients', $emailRecipients);
             TimeTrackerModel::saveSetting('email_reports_type', $emailType);
+            TimeTrackerModel::saveSetting('enable_timesheets', $enableTimesheets);
+            TimeTrackerModel::saveSetting('enable_billable_overtime', $enableBillableOvertime);
 
             $_SESSION['tt_success'] = "Plugin settings and email report configurations saved successfully!";
         }
@@ -637,6 +646,10 @@ add_action('register_routes', function() {
     register_route('time_tracker_timesheet', function() {
         if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
             die('Access Denied.');
+        }
+        $enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
+        if ($enableTimesheets !== '1') {
+            die('Timesheets module is currently disabled by Plugin Administrator.');
         }
         time_tracker_handle_posts();
         require_once __DIR__ . '/views/timesheet-view.php';

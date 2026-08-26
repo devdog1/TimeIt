@@ -8,6 +8,8 @@ $catFilter = $_GET['category'] ?? '';
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-t');
 
+$enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
+
 $tasks = TimeTrackerModel::getTasks($userId, $startDate, $endDate, null, $catFilter);
 $totalHours = array_sum(array_column($tasks, 'hours'));
 
@@ -177,6 +179,7 @@ if (isset($_GET['edit_task'])) {
                     <input type="datetime-local" name="entry_datetime" class="form-control" value="<?= htmlspecialchars(isset($editTask['entry_datetime']) ? date('Y-m-d\TH:i', strtotime($editTask['entry_datetime'])) : date('Y-m-d\TH:i')) ?>" required>
                 </div>
 
+                <?php if ($enableBillableOvertime === '1'): ?>
                 <div class="col-md-12 d-flex align-items-center gap-4">
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" name="is_billable" value="1" id="chk_billable" <?= (!isset($editTask['is_billable']) || $editTask['is_billable'] == 1) ? 'checked' : '' ?>>
@@ -187,6 +190,7 @@ if (isset($_GET['edit_task'])) {
                         <label class="form-check-label small fw-bold text-warning" for="chk_overtime">Overtime Hours</label>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <div class="col-12 text-end d-flex justify-content-end gap-2">
                     <?php if ($editTask): ?>

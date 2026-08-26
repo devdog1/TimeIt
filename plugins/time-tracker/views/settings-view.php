@@ -8,6 +8,9 @@ $emailFreq = TimeTrackerModel::getSetting('email_reports_frequency', 'weekly');
 $emailRecipients = TimeTrackerModel::getSetting('email_reports_recipients', '');
 $emailType = TimeTrackerModel::getSetting('email_reports_type', 'finance');
 
+$enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
+$enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
+
 $months = [
     1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
     5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
@@ -100,6 +103,24 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                                     Date Range: <?= date('M d, Y', strtotime($currRange['start_date'])) ?> &mdash; <?= date('M d, Y', strtotime($currRange['end_date'])) ?>
                                 </div>
                             </div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <h6 class="fw-bold mb-3"><i class="fa-solid fa-toggle-on text-primary me-2"></i> Plugin Feature Modules</h6>
+
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="enable_timesheets" value="1" id="chk_enable_timesheets" <?= $enableTimesheets === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-bold small" for="chk_enable_timesheets">
+                                Enable Printable Employee Timesheets & Approval Signatures View
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="enable_billable_overtime" value="1" id="chk_enable_billable_overtime" <?= $enableBillableOvertime === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-bold small" for="chk_enable_billable_overtime">
+                                Enable Billable Hours & Overtime Switches
+                            </label>
                         </div>
                     </div>
                 </div>
