@@ -11,6 +11,10 @@ $emailType = TimeTrackerModel::getSetting('email_reports_type', 'finance');
 $enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
 $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
 
+$catProjectEnabled = TimeTrackerModel::getSetting('cat_project_enabled', '1');
+$catSupportEnabled = TimeTrackerModel::getSetting('cat_support_enabled', '1');
+$catMaintenanceEnabled = TimeTrackerModel::getSetting('cat_maintenance_enabled', '1');
+
 $months = [
     1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
     5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
@@ -116,11 +120,30 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                             </label>
                         </div>
 
-                        <div class="form-check form-switch mb-2">
+                        <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" name="enable_billable_overtime" value="1" id="chk_enable_billable_overtime" <?= $enableBillableOvertime === '1' ? 'checked' : '' ?>>
                             <label class="form-check-label fw-bold small" for="chk_enable_billable_overtime">
                                 Enable Billable Hours & Overtime Switches
                             </label>
+                        </div>
+
+                        <hr class="my-3">
+
+                        <h6 class="fw-bold mb-2"><i class="fa-solid fa-folder-tree text-primary me-2"></i> Category Module Toggles</h6>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="cat_project_enabled" value="1" id="chk_cat_project" <?= $catProjectEnabled === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label small fw-bold" for="chk_cat_project">Enable Projects Category</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="cat_support_enabled" value="1" id="chk_cat_support" <?= $catSupportEnabled === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label small fw-bold" for="chk_cat_support">Enable Support Activities Category</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="cat_maintenance_enabled" value="1" id="chk_cat_maint" <?= $catMaintenanceEnabled === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label small fw-bold" for="chk_cat_maint">Enable Maintenance Activities Category</label>
                         </div>
                     </div>
                 </div>

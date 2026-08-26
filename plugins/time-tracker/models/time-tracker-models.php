@@ -26,8 +26,10 @@ class TimeTrackerModel {
             description TEXT NULL,
             estimated_hours DECIMAL(8,2) NULL,
             lead_user_id INT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_category (category)
+            KEY idx_category (category),
+            KEY idx_is_active (is_active)
         ");
 
         $pdb->createTable('tasks', "
@@ -373,15 +375,42 @@ class TimeTrackerModel {
 
     /* ================= ITEMS & PROJECTS METHODS ================= */
 
-    public static function getItems($category = null) {
+    public static function getEnabledCategoryTypes() {
+        $cats = [];
+        if (self::getSetting('cat_project_enabled', '1') === '1') $cats[] = 'project';
+        if (self::getSetting('cat_support_enabled', '1') === '1') $cats[] = 'support';
+        if (self::getSetting('cat_maintenance_enabled', '1') === '1') $cats[] = 'maintenance';
+        return $cats;
+    }
+
+    public static function getItems($category = null, $activeOnly = false) {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
 
+        $where = [];
+        $params = [];
+
         if ($category && in_array($category, ['project', 'support', 'maintenance'])) {
-            $stmt = $pdb->query("SELECT * FROM {$tbItems} WHERE category = ? ORDER BY name ASC", [$category]);
-        } else {
-            $stmt = $pdb->query("SELECT * FROM {$tbItems} ORDER BY category ASC, name ASC");
+            $where[] = "category = ?";
+            $params[] = $category;
         }
+
+        if ($activeOnly) {
+            $where[] = "is_active = 1";
+            $enabledCats = self::getEnabledCategoryTypes();
+            if (empty($enabledCats)) {
+                return [];
+            }
+            $inClause = implode(',', array_fill(0, count($enabledCats), '?'));
+            $where[] = "category IN ({$inClause})";
+            foreach ($enabledCats as $ec) {
+                $params[] = $ec;
+            }
+        }
+
+        $whereSql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
+
+        $stmt = $pdb->query("SELECT * FROM {$tbItems} {$whereSql} ORDER BY category ASC, name ASC", $params);
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $tbTasks = $pdb->getTableName('tasks');
@@ -393,6 +422,13 @@ class TimeTrackerModel {
         }
 
         return $items;
+    }
+
+    public static function toggleItemActive($id, $isActive) {
+        $pdb = self::getPdb();
+        $tbItems = $pdb->getTableName('items');
+        $pdb->query("UPDATE {$tbItems} SET is_active = ? WHERE id = ?", [$isActive ? 1 : 0, $id]);
+        return true;
     }
 
     public static function getProjectsLedByUser($userId) {
@@ -424,7 +460,7 @@ class TimeTrackerModel {
         return $item;
     }
 
-    public static function saveItem($id, $category, $name, $description = '', $estimated_hours = null, $lead_user_id = null) {
+    public static function saveItem($id, $category, $name, $description = '', $estimated_hours = null, $lead_user_id = null, $is_active = 1) {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
 
@@ -437,17 +473,18 @@ class TimeTrackerModel {
 
         $estHours = ($estimated_hours !== null && $estimated_hours !== '') ? (float)$estimated_hours : null;
         $leadUser = ($lead_user_id !== null && $lead_user_id !== '' && (int)$lead_user_id > 0) ? (int)$lead_user_id : null;
+        $activeVal = $is_active ? 1 : 0;
 
         if ($id > 0) {
             $pdb->query(
-                "UPDATE {$tbItems} SET category = ?, name = ?, description = ?, estimated_hours = ?, lead_user_id = ? WHERE id = ?",
-                [$category, trim($name), trim($description), $estHours, $leadUser, $id]
+                "UPDATE {$tbItems} SET category = ?, name = ?, description = ?, estimated_hours = ?, lead_user_id = ?, is_active = ? WHERE id = ?",
+                [$category, trim($name), trim($description), $estHours, $leadUser, $activeVal, $id]
             );
             return $id;
         } else {
             $pdb->query(
-                "INSERT INTO {$tbItems} (category, name, description, estimated_hours, lead_user_id) VALUES (?, ?, ?, ?, ?)",
-                [$category, trim($name), trim($description), $estHours, $leadUser]
+                "INSERT INTO {$tbItems} (category, name, description, estimated_hours, lead_user_id, is_active) VALUES (?, ?, ?, ?, ?, ?)",
+                [$category, trim($name), trim($description), $estHours, $leadUser, $activeVal]
             );
             return get_db_connection()->lastInsertId();
         }

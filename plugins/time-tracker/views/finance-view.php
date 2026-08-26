@@ -43,7 +43,7 @@ $exportCsvUrl = "index.php?route=time_tracker_finance&export_csv=1&start_date={$
             <p class="text-muted small mb-0">Financial audit view of all project hours, support time, maintenance activity, and team allocations.</p>
         </div>
         <div class="d-flex gap-2">
-            <a href="<?= $exportCsvUrl ?>" class="btn btn-success btn-sm">
+            <a href="<?= htmlspecialchars($exportCsvUrl) ?>" class="btn btn-success btn-sm">
                 <i class="fa-solid fa-file-csv me-1"></i> Export Report to CSV
             </a>
         </div>

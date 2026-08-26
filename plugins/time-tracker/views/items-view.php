@@ -92,6 +92,11 @@ if (isset($_GET['edit_item'])) {
                             </select>
                         </div>
 
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="chk_item_active" <?= (!isset($editItem['is_active']) || $editItem['is_active'] == 1) ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-bold small" for="chk_item_active">Active (Visible in Task Logging)</label>
+                        </div>
+
                         <div class="d-flex justify-content-between">
                             <?php if ($editItem): ?>
                                 <a href="index.php?route=time_tracker_items" class="btn btn-secondary btn-sm"><i class="fa-solid fa-xmark me-1"></i> Cancel</a>
@@ -116,6 +121,7 @@ if (isset($_GET['edit_item'])) {
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
+                                    <th>Status</th>
                                     <th>Category</th>
                                     <th>Name & Description</th>
                                     <th>Lead User</th>
@@ -127,7 +133,7 @@ if (isset($_GET['edit_item'])) {
                             <tbody>
                                 <?php if (empty($items)): ?>
                                     <tr>
-                                        <td colspan="6" class="text-center py-4 text-muted">No category items created yet.</td>
+                                        <td colspan="7" class="text-center py-4 text-muted">No category items created yet.</td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($items as $item):
@@ -135,8 +141,17 @@ if (isset($_GET['edit_item'])) {
                                         if ($item['category'] === 'project') $bClass = 'bg-primary';
                                         elseif ($item['category'] === 'support') $bClass = 'bg-info text-dark';
                                         elseif ($item['category'] === 'maintenance') $bClass = 'bg-warning text-dark';
+
+                                        $isActive = ($item['is_active'] ?? 1) == 1;
                                     ?>
-                                        <tr>
+                                        <tr class="<?= !$isActive ? 'table-light text-muted' : '' ?>">
+                                            <td>
+                                                <?php if ($isActive): ?>
+                                                    <span class="badge bg-success"><i class="fa-solid fa-circle-check me-1"></i> Active</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary"><i class="fa-solid fa-ban me-1"></i> Disabled</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><span class="badge <?= $bClass ?>"><?= ucfirst($item['category']) ?></span></td>
                                             <td>
                                                 <div class="fw-bold text-dark"><?= htmlspecialchars($item['name']) ?></div>
@@ -154,9 +169,20 @@ if (isset($_GET['edit_item'])) {
                                                 <?= number_format($item['actual_hours'], 2) ?> hrs
                                             </td>
                                             <td class="text-end">
+                                                <form action="index.php?route=time_tracker_items" method="POST" class="d-inline">
+                                                    <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                                    <input type="hidden" name="action" value="toggle_item_status">
+                                                    <input type="hidden" name="item_id" value="<?= $item['id'] ?>">
+                                                    <input type="hidden" name="target_status" value="<?= $isActive ? '0' : '1' ?>">
+                                                    <button type="submit" class="btn btn-sm <?= $isActive ? 'btn-outline-warning' : 'btn-outline-success' ?> me-1" title="<?= $isActive ? 'Disable Item' : 'Enable Item' ?>">
+                                                        <i class="fa-solid <?= $isActive ? 'fa-ban' : 'fa-circle-check' ?>"></i>
+                                                    </button>
+                                                </form>
+
                                                 <a href="index.php?route=time_tracker_items&edit_item=<?= $item['id'] ?>" class="btn btn-sm btn-outline-primary me-1">
                                                     <i class="fa-solid fa-pen-to-square"></i>
                                                 </a>
+
                                                 <form action="index.php?route=time_tracker_items" method="POST" class="d-inline" onsubmit="return confirm('Deleting this item will also remove all associated time entries! Are you sure?');">
                                                     <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
                                                     <input type="hidden" name="action" value="delete_item">

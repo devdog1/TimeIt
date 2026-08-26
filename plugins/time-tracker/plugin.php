@@ -355,7 +355,7 @@ add_action('index_dashboard_widgets', function($userContext) {
     }
 
     $userId = $_SESSION['user_id'] ?? 0;
-    $items = TimeTrackerModel::getItems();
+    $items = TimeTrackerModel::getItems(null, true);
     $recentTasks = TimeTrackerModel::getTasks($userId, date('Y-m-d'), date('Y-m-d'));
     $todayHours = array_sum(array_column($recentTasks, 'hours'));
 
@@ -504,9 +504,16 @@ function time_tracker_handle_posts() {
             $description = $_POST['description'] ?? '';
             $estimatedHours = $_POST['estimated_hours'] !== '' ? $_POST['estimated_hours'] : null;
             $leadUserId = $_POST['lead_user_id'] !== '' ? $_POST['lead_user_id'] : null;
+            $isActive = isset($_POST['is_active']) ? 1 : 0;
 
-            TimeTrackerModel::saveItem($itemId, $category, $name, $description, $estimatedHours, $leadUserId);
+            TimeTrackerModel::saveItem($itemId, $category, $name, $description, $estimatedHours, $leadUserId, $isActive);
             $_SESSION['tt_success'] = ($itemId > 0) ? "Item updated successfully." : "New project/category item created!";
+        }
+        elseif ($action === 'toggle_item_status') {
+            $itemId = (int)($_POST['item_id'] ?? 0);
+            $targetStatus = (int)($_POST['target_status'] ?? 1);
+            TimeTrackerModel::toggleItemActive($itemId, $targetStatus);
+            $_SESSION['tt_success'] = ($targetStatus === 1) ? "Category item enabled." : "Category item disabled.";
         }
         elseif ($action === 'delete_item') {
             $itemId = (int)($_POST['item_id'] ?? 0);
@@ -543,6 +550,10 @@ function time_tracker_handle_posts() {
             $enableTimesheets = isset($_POST['enable_timesheets']) ? '1' : '0';
             $enableBillableOvertime = isset($_POST['enable_billable_overtime']) ? '1' : '0';
 
+            $catProjectEnabled = isset($_POST['cat_project_enabled']) ? '1' : '0';
+            $catSupportEnabled = isset($_POST['cat_support_enabled']) ? '1' : '0';
+            $catMaintenanceEnabled = isset($_POST['cat_maintenance_enabled']) ? '1' : '0';
+
             TimeTrackerModel::saveSetting('fy_start_month', $fyMonth);
             TimeTrackerModel::saveSetting('fy_start_day', $fyDay);
             TimeTrackerModel::saveSetting('email_reports_enabled', $emailEnabled);
@@ -551,6 +562,9 @@ function time_tracker_handle_posts() {
             TimeTrackerModel::saveSetting('email_reports_type', $emailType);
             TimeTrackerModel::saveSetting('enable_timesheets', $enableTimesheets);
             TimeTrackerModel::saveSetting('enable_billable_overtime', $enableBillableOvertime);
+            TimeTrackerModel::saveSetting('cat_project_enabled', $catProjectEnabled);
+            TimeTrackerModel::saveSetting('cat_support_enabled', $catSupportEnabled);
+            TimeTrackerModel::saveSetting('cat_maintenance_enabled', $catMaintenanceEnabled);
 
             $_SESSION['tt_success'] = "Plugin settings and email report configurations saved successfully!";
         }

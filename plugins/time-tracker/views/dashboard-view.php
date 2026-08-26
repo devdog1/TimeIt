@@ -1,6 +1,6 @@
 <?php
 $userId = $_SESSION['user_id'] ?? 0;
-$items = TimeTrackerModel::getItems();
+$items = TimeTrackerModel::getItems(null, true);
 $activeTask = TimeTrackerModel::getActiveTaskForUser($userId);
 
 // Filter parameters

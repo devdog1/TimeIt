@@ -5,8 +5,10 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_items (
     description TEXT NULL,
     estimated_hours DECIMAL(8,2) NULL,
     lead_user_id INT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_category (category)
+    KEY idx_category (category),
+    KEY idx_is_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS plug_time_tracker_tasks (
