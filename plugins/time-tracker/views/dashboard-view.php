@@ -136,12 +136,17 @@ if (isset($_GET['edit_task'])) {
                     <input type="hidden" name="task_id" value="<?= $editTask['id'] ?>">
                 <?php endif; ?>
 
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <label class="form-label fw-bold small">Task Name / Description</label>
                     <input type="text" name="task_name" class="form-control" placeholder="Describe the task performed..." value="<?= htmlspecialchars($editTask['task_name'] ?? '') ?>" required>
                 </div>
 
-                <div class="col-md-4">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold small">Ticket Ref # (Optional)</label>
+                    <input type="text" name="ticket_ref" class="form-control" placeholder="e.g. INC-1024" value="<?= htmlspecialchars($editTask['ticket_ref'] ?? '') ?>">
+                </div>
+
+                <div class="col-md-3">
                     <label class="form-label fw-bold small">Applied Category / Project</label>
                     <select name="item_id" class="form-select" required>
                         <option value="">-- Select Project / Activity --</option>
@@ -170,6 +175,17 @@ if (isset($_GET['edit_task'])) {
                 <div class="col-md-2">
                     <label class="form-label fw-bold small">Date & Time</label>
                     <input type="datetime-local" name="entry_datetime" class="form-control" value="<?= htmlspecialchars(isset($editTask['entry_datetime']) ? date('Y-m-d\TH:i', strtotime($editTask['entry_datetime'])) : date('Y-m-d\TH:i')) ?>" required>
+                </div>
+
+                <div class="col-md-12 d-flex align-items-center gap-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="is_billable" value="1" id="chk_billable" <?= (!isset($editTask['is_billable']) || $editTask['is_billable'] == 1) ? 'checked' : '' ?>>
+                        <label class="form-check-label small fw-bold" for="chk_billable">Billable Hours</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="is_overtime" value="1" id="chk_overtime" <?= (isset($editTask['is_overtime']) && $editTask['is_overtime'] == 1) ? 'checked' : '' ?>>
+                        <label class="form-check-label small fw-bold text-warning" for="chk_overtime">Overtime Hours</label>
+                    </div>
                 </div>
 
                 <div class="col-12 text-end d-flex justify-content-end gap-2">

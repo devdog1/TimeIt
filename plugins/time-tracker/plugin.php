@@ -326,6 +326,7 @@ add_filter('theme_nav_links', function($links) {
     if (has_permission('time_tracker_supervisor_access') || has_role('administrator')) {
         $children[] = ['label' => 'Teams Management', 'icon' => 'fa-solid fa-users-gear', 'route' => 'time_tracker_teams'];
         $children[] = ['label' => 'Supervisor View', 'icon' => 'fa-solid fa-user-shield', 'route' => 'time_tracker_supervisor'];
+        $children[] = ['label' => 'Timesheet & Approval', 'icon' => 'fa-solid fa-file-signature', 'route' => 'time_tracker_timesheet'];
         $children[] = ['label' => 'Plugin Settings', 'icon' => 'fa-solid fa-sliders', 'route' => 'time_tracker_settings'];
     }
 
@@ -461,6 +462,9 @@ function time_tracker_handle_posts() {
             $taskId = isset($_POST['task_id']) ? (int)$_POST['task_id'] : 0;
             $itemId = (int)($_POST['item_id'] ?? 0);
             $taskName = $_POST['task_name'] ?? '';
+            $ticketRef = $_POST['ticket_ref'] ?? '';
+            $isBillable = isset($_POST['is_billable']) ? 1 : 0;
+            $isOvertime = isset($_POST['is_overtime']) ? 1 : 0;
             $hours = (float)($_POST['hours'] ?? 0);
             $entryDatetime = $_POST['entry_datetime'] ?? '';
 
@@ -481,7 +485,7 @@ function time_tracker_handle_posts() {
                 }
             }
 
-            TimeTrackerModel::saveTask($taskId, $targetUserId, $itemId, $taskName, $hours, $entryDatetime, 'completed');
+            TimeTrackerModel::saveTask($taskId, $targetUserId, $itemId, $taskName, $hours, $entryDatetime, 'completed', $ticketRef, $isBillable, $isOvertime);
             $_SESSION['tt_success'] = ($taskId > 0) ? "Task updated successfully." : "Task logged successfully!";
         }
         elseif ($action === 'delete_task') {
@@ -628,6 +632,14 @@ add_action('register_routes', function() {
         }
         time_tracker_handle_posts();
         require_once __DIR__ . '/views/teams-view.php';
+    });
+
+    register_route('time_tracker_timesheet', function() {
+        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
+            die('Access Denied.');
+        }
+        time_tracker_handle_posts();
+        require_once __DIR__ . '/views/timesheet-view.php';
     });
 
     register_route('time_tracker_settings', function() {

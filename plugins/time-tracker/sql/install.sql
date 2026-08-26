@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_tasks (
     user_id INT NOT NULL,
     item_id INT NOT NULL,
     task_name VARCHAR(255) NOT NULL,
+    ticket_ref VARCHAR(64) NULL,
+    is_billable TINYINT(1) NOT NULL DEFAULT 1,
+    is_overtime TINYINT(1) NOT NULL DEFAULT 0,
     hours DECIMAL(6,2) NOT NULL DEFAULT 0.00,
     entry_datetime DATETIME NOT NULL,
     status ENUM('in_progress', 'completed') NOT NULL DEFAULT 'completed',
@@ -26,7 +29,8 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_tasks (
     KEY idx_item_id (item_id),
     KEY idx_entry_datetime (entry_datetime),
     KEY idx_status (status),
-    KEY idx_checkin_token (checkin_token)
+    KEY idx_checkin_token (checkin_token),
+    KEY idx_ticket_ref (ticket_ref)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS plug_time_tracker_teams (

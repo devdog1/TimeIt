@@ -35,6 +35,9 @@ class TimeTrackerModel {
             user_id INT NOT NULL,
             item_id INT NOT NULL,
             task_name VARCHAR(255) NOT NULL,
+            ticket_ref VARCHAR(64) NULL,
+            is_billable TINYINT(1) NOT NULL DEFAULT 1,
+            is_overtime TINYINT(1) NOT NULL DEFAULT 0,
             hours DECIMAL(6,2) NOT NULL DEFAULT 0.00,
             entry_datetime DATETIME NOT NULL,
             status ENUM('in_progress', 'completed') NOT NULL DEFAULT 'completed',
@@ -47,7 +50,8 @@ class TimeTrackerModel {
             KEY idx_item_id (item_id),
             KEY idx_entry_datetime (entry_datetime),
             KEY idx_status (status),
-            KEY idx_checkin_token (checkin_token)
+            KEY idx_checkin_token (checkin_token),
+            KEY idx_ticket_ref (ticket_ref)
         ");
 
         $pdb->createTable('teams', "
@@ -88,7 +92,7 @@ class TimeTrackerModel {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public static function startTaskTimer($userId, $itemId, $taskName) {
+    public static function startTaskTimer($userId, $itemId, $taskName, $ticketRef = '', $isBillable = 1, $isOvertime = 0) {
         $pdb = self::getPdb();
         $tbTasks = $pdb->getTableName('tasks');
 
@@ -107,8 +111,8 @@ class TimeTrackerModel {
         $token = bin2hex(random_bytes(32));
 
         $pdb->query(
-            "INSERT INTO {$tbTasks} (user_id, item_id, task_name, hours, entry_datetime, status, last_checkin_at, checkin_token) VALUES (?, ?, ?, 0.00, ?, 'in_progress', ?, ?)",
-            [$userId, $itemId, trim($taskName), $now, $now, $token]
+            "INSERT INTO {$tbTasks} (user_id, item_id, task_name, ticket_ref, is_billable, is_overtime, hours, entry_datetime, status, last_checkin_at, checkin_token) VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, 'in_progress', ?, ?)",
+            [$userId, $itemId, trim($taskName), trim($ticketRef), $isBillable ? 1 : 0, $isOvertime ? 1 : 0, $now, $now, $token]
         );
 
         return get_db_connection()->lastInsertId();
@@ -476,7 +480,7 @@ class TimeTrackerModel {
         return $stmt->fetch() !== false;
     }
 
-    public static function saveTask($taskId, $userId, $itemId, $taskName, $hours, $entryDatetime, $status = 'completed') {
+    public static function saveTask($taskId, $userId, $itemId, $taskName, $hours, $entryDatetime, $status = 'completed', $ticketRef = '', $isBillable = 1, $isOvertime = 0) {
         $pdb = self::getPdb();
         $tbTasks = $pdb->getTableName('tasks');
 
@@ -514,14 +518,14 @@ class TimeTrackerModel {
             }
 
             $pdb->query(
-                "UPDATE {$tbTasks} SET user_id = ?, item_id = ?, task_name = ?, hours = ?, entry_datetime = ?, status = ? WHERE id = ?",
-                [$userId, $itemId, trim($taskName), $numHours, $formattedDt, $status, $taskId]
+                "UPDATE {$tbTasks} SET user_id = ?, item_id = ?, task_name = ?, ticket_ref = ?, is_billable = ?, is_overtime = ?, hours = ?, entry_datetime = ?, status = ? WHERE id = ?",
+                [$userId, $itemId, trim($taskName), trim($ticketRef), $isBillable ? 1 : 0, $isOvertime ? 1 : 0, $numHours, $formattedDt, $status, $taskId]
             );
             return $taskId;
         } else {
             $pdb->query(
-                "INSERT INTO {$tbTasks} (user_id, item_id, task_name, hours, entry_datetime, status, last_checkin_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [$userId, $itemId, trim($taskName), $numHours, $formattedDt, $status, date('Y-m-d H:i:s')]
+                "INSERT INTO {$tbTasks} (user_id, item_id, task_name, ticket_ref, is_billable, is_overtime, hours, entry_datetime, status, last_checkin_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$userId, $itemId, trim($taskName), trim($ticketRef), $isBillable ? 1 : 0, $isOvertime ? 1 : 0, $numHours, $formattedDt, $status, date('Y-m-d H:i:s')]
             );
             return get_db_connection()->lastInsertId();
         }
