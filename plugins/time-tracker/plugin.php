@@ -543,6 +543,30 @@ function time_tracker_handle_posts() {
             TimeTrackerModel::deleteTeam($teamId);
             $_SESSION['tt_success'] = "Team deleted successfully.";
         }
+        elseif ($action === 'save_category') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $catId = (int)($_POST['category_id'] ?? 0);
+            $slug = $_POST['slug'] ?? '';
+            $name = $_POST['name'] ?? '';
+            $description = $_POST['description'] ?? '';
+            $isEnabled = isset($_POST['is_enabled']) ? 1 : 0;
+
+            TimeTrackerModel::saveCategory($catId, $slug, $name, $description, $isEnabled, 1);
+            $_SESSION['tt_success'] = ($catId > 0) ? "Category updated successfully." : "Custom category created successfully!";
+        }
+        elseif ($action === 'toggle_category_status') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $catId = (int)($_POST['category_id'] ?? 0);
+            $targetStatus = (int)($_POST['target_status'] ?? 1);
+            TimeTrackerModel::toggleCategoryEnabled($catId, $targetStatus);
+            $_SESSION['tt_success'] = ($targetStatus === 1) ? "Category enabled." : "Category disabled.";
+        }
+        elseif ($action === 'delete_category') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $catId = (int)($_POST['category_id'] ?? 0);
+            TimeTrackerModel::deleteCategory($catId);
+            $_SESSION['tt_success'] = "Custom category deleted successfully.";
+        }
         elseif ($action === 'save_settings') {
             if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
 

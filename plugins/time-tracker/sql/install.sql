@@ -1,6 +1,17 @@
+CREATE TABLE IF NOT EXISTS plug_time_tracker_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    slug VARCHAR(64) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    is_custom TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_is_enabled (is_enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS plug_time_tracker_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    category ENUM('project', 'support', 'maintenance') NOT NULL DEFAULT 'project',
+    category VARCHAR(64) NOT NULL DEFAULT 'project',
     name VARCHAR(255) NOT NULL,
     description TEXT NULL,
     estimated_hours DECIMAL(8,2) NULL,

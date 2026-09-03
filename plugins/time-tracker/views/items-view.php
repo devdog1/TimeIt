@@ -2,6 +2,7 @@
 $showArchived = isset($_GET['show_archived']) && $_GET['show_archived'] === '1';
 $items = TimeTrackerModel::getItems(null, false, $showArchived);
 $users = TimeTrackerModel::getAllUsers();
+$categories = TimeTrackerModel::getCategories(true);
 
 $editItem = null;
 if (isset($_GET['edit_item'])) {
@@ -14,7 +15,7 @@ if (isset($_GET['edit_item'])) {
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h3 class="fw-bold mb-1"><i class="fa-solid fa-folder-tree text-primary me-2"></i> Projects & Categories</h3>
-            <p class="text-muted small mb-0">Manage Projects, Support Activities, and Maintenance Activities for time tracking.</p>
+            <p class="text-muted small mb-0">Manage Projects, Support Activities, Maintenance, and Custom Categories for time tracking.</p>
         </div>
         <div class="d-flex gap-2">
             <?php if ($showArchived): ?>
@@ -67,9 +68,11 @@ if (isset($_GET['edit_item'])) {
                         <div class="mb-3">
                             <label class="form-label fw-bold small">Category Type</label>
                             <select name="category" class="form-select" required>
-                                <option value="project" <?= ($editItem && $editItem['category'] === 'project') ? 'selected' : '' ?>>Project</option>
-                                <option value="support" <?= ($editItem && $editItem['category'] === 'support') ? 'selected' : '' ?>>Support Activity</option>
-                                <option value="maintenance" <?= ($editItem && $editItem['category'] === 'maintenance') ? 'selected' : '' ?>>Maintenance Activity</option>
+                                <?php foreach ($categories as $cat): ?>
+                                    <option value="<?= htmlspecialchars($cat['slug']) ?>" <?= ($editItem && $editItem['category'] === $cat['slug']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($cat['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                             <div class="form-text small">Select category under which tasks will be grouped.</div>
                         </div>
@@ -153,10 +156,10 @@ if (isset($_GET['edit_item'])) {
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($items as $item):
-                                        $bClass = 'bg-secondary';
-                                        if ($item['category'] === 'project') $bClass = 'bg-primary';
-                                        elseif ($item['category'] === 'support') $bClass = 'bg-info text-dark';
+                                        $bClass = 'bg-primary';
+                                        if ($item['category'] === 'support') $bClass = 'bg-info text-dark';
                                         elseif ($item['category'] === 'maintenance') $bClass = 'bg-warning text-dark';
+                                        elseif ($item['category'] !== 'project') $bClass = 'bg-secondary';
 
                                         $isActive = ($item['is_active'] ?? 1) == 1;
                                         $isArchived = ($item['is_archived'] ?? 0) == 1;

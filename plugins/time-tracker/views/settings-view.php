@@ -11,9 +11,15 @@ $emailType = TimeTrackerModel::getSetting('email_reports_type', 'finance');
 $enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
 $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
 
-$catProjectEnabled = TimeTrackerModel::getSetting('cat_project_enabled', '1');
-$catSupportEnabled = TimeTrackerModel::getSetting('cat_support_enabled', '1');
-$catMaintenanceEnabled = TimeTrackerModel::getSetting('cat_maintenance_enabled', '1');
+$allCategories = TimeTrackerModel::getCategories(false);
+
+$editCategory = null;
+if (isset($_GET['edit_category'])) {
+    $editCatId = (int)$_GET['edit_category'];
+    foreach ($allCategories as $c) {
+        if ($c['id'] == $editCatId) { $editCategory = $c; break; }
+    }
+}
 
 $months = [
     1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
@@ -29,7 +35,7 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h3 class="fw-bold mb-1"><i class="fa-solid fa-sliders text-primary me-2"></i> Time Tracker Settings</h3>
-            <p class="text-muted small mb-0">Configure Financial Year start rules, presentation naming, and framework scheduled email reports.</p>
+            <p class="text-muted small mb-0">Configure Financial Year start rules, dynamic categories, feature modules, and scheduled email reports.</p>
         </div>
         <div>
             <a href="index.php?route=time_tracker" class="btn btn-outline-secondary btn-sm">
@@ -65,6 +71,140 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
         </div>
     <?php endif; ?>
 
+    <!-- Dynamic Category Manager Section -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0"><i class="fa-solid fa-tags me-2"></i> Category Manager (Supervisor Controls)</h5>
+            <span class="badge bg-primary"><?= count($allCategories) ?> Categories Configured</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-4">
+                <!-- Add / Edit Category Form -->
+                <div class="col-lg-4 border-end">
+                    <h6 class="fw-bold mb-3 text-primary">
+                        <i class="fa-solid <?= $editCategory ? 'fa-pen-to-square' : 'fa-plus' ?> me-1"></i>
+                        <?= $editCategory ? 'Edit Category' : 'Create Custom Category' ?>
+                    </h6>
+                    <form action="index.php?route=time_tracker_settings" method="POST">
+                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                        <input type="hidden" name="action" value="save_category">
+                        <?php if ($editCategory): ?>
+                            <input type="hidden" name="category_id" value="<?= $editCategory['id'] ?>">
+                        <?php endif; ?>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Slug Identifier</label>
+                            <input type="text" name="slug" class="form-control form-control-sm" placeholder="e.g. security_audit, research_dev" value="<?= htmlspecialchars($editCategory['slug'] ?? '') ?>" <?= ($editCategory && $editCategory['is_custom'] == 0) ? 'readonly' : 'required' ?>>
+                            <div class="form-text small">Unique alphanumeric key.</div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Display Name</label>
+                            <input type="text" name="name" class="form-control form-control-sm" placeholder="e.g. Security Audits, R&D" value="<?= htmlspecialchars($editCategory['name'] ?? '') ?>" required>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Description</label>
+                            <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Optional details..."><?= htmlspecialchars($editCategory['description'] ?? '') ?></textarea>
+                        </div>
+
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="is_enabled" value="1" id="chk_cat_enabled" <?= (!isset($editCategory['is_enabled']) || $editCategory['is_enabled'] == 1) ? 'checked' : '' ?>>
+                            <label class="form-check-label small fw-bold" for="chk_cat_enabled">Enabled (Visible in Task Logging)</label>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <?php if ($editCategory): ?>
+                                <a href="index.php?route=time_tracker_settings" class="btn btn-secondary btn-sm"><i class="fa-solid fa-xmark me-1"></i> Cancel</a>
+                            <?php endif; ?>
+                            <button type="submit" class="btn btn-primary btn-sm ms-auto px-3">
+                                <i class="fa-solid fa-floppy-disk me-1"></i> <?= $editCategory ? 'Update Category' : 'Create Category' ?>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Categories List -->
+                <div class="col-lg-8">
+                    <h6 class="fw-bold mb-3 text-secondary"><i class="fa-solid fa-list me-1"></i> Configured Categories List</h6>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Slug</th>
+                                    <th>Display Name</th>
+                                    <th>Type</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($allCategories as $cat):
+                                    $isEnabled = ($cat['is_enabled'] ?? 1) == 1;
+                                    $isCustom = ($cat['is_custom'] ?? 0) == 1;
+                                ?>
+                                    <tr>
+                                        <td>
+                                            <?php if ($isEnabled): ?>
+                                                <span class="badge bg-success"><i class="fa-solid fa-circle-check me-1"></i> Enabled</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-secondary"><i class="fa-solid fa-ban me-1"></i> Disabled</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><code><?= htmlspecialchars($cat['slug']) ?></code></td>
+                                        <td>
+                                            <strong class="text-dark d-block"><?= htmlspecialchars($cat['name']) ?></strong>
+                                            <?php if (!empty($cat['description'])): ?>
+                                                <span class="text-muted d-block small"><?= htmlspecialchars($cat['description']) ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if ($isCustom): ?>
+                                                <span class="badge bg-info text-dark">Custom</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-dark">System Default</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-end">
+                                            <!-- Enable / Disable Button -->
+                                            <form action="index.php?route=time_tracker_settings" method="POST" class="d-inline">
+                                                <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                                <input type="hidden" name="action" value="toggle_category_status">
+                                                <input type="hidden" name="category_id" value="<?= $cat['id'] ?>">
+                                                <input type="hidden" name="target_status" value="<?= $isEnabled ? '0' : '1' ?>">
+                                                <button type="submit" class="btn btn-sm <?= $isEnabled ? 'btn-outline-warning' : 'btn-outline-success' ?> py-0 px-2" title="<?= $isEnabled ? 'Disable Category' : 'Enable Category' ?>">
+                                                    <i class="fa-solid <?= $isEnabled ? 'fa-ban' : 'fa-circle-check' ?>"></i>
+                                                </button>
+                                            </form>
+
+                                            <!-- Edit Button -->
+                                            <a href="index.php?route=time_tracker_settings&edit_category=<?= $cat['id'] ?>" class="btn btn-sm btn-outline-primary py-0 px-2">
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </a>
+
+                                            <!-- Delete Button (Custom Only) -->
+                                            <?php if ($isCustom): ?>
+                                                <form action="index.php?route=time_tracker_settings" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this custom category?');">
+                                                    <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                                    <input type="hidden" name="action" value="delete_category">
+                                                    <input type="hidden" name="category_id" value="<?= $cat['id'] ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
+                                                        <i class="fa-solid fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plugin Main Settings Form -->
     <form action="index.php?route=time_tracker_settings" method="POST">
         <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
         <input type="hidden" name="action" value="save_settings">
@@ -96,7 +236,7 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                             </div>
                         </div>
 
-                        <div class="alert alert-light border border-info py-3 mb-0">
+                        <div class="alert alert-light border border-info py-3 mb-3">
                             <h6 class="fw-bold text-info mb-1"><i class="fa-solid fa-circle-info me-1"></i> Financial Year Presentation Rule</h6>
                             <p class="small text-muted mb-2">
                                 The presentation name of the Financial Year is defined as the year in which <strong>January 1st</strong> falls.
@@ -109,7 +249,7 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                             </div>
                         </div>
 
-                        <hr class="my-4">
+                        <hr class="my-3">
 
                         <h6 class="fw-bold mb-3"><i class="fa-solid fa-toggle-on text-primary me-2"></i> Plugin Feature Modules</h6>
 
@@ -120,30 +260,11 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                             </label>
                         </div>
 
-                        <div class="form-check form-switch mb-3">
+                        <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" name="enable_billable_overtime" value="1" id="chk_enable_billable_overtime" <?= $enableBillableOvertime === '1' ? 'checked' : '' ?>>
                             <label class="form-check-label fw-bold small" for="chk_enable_billable_overtime">
                                 Enable Billable Hours & Overtime Switches
                             </label>
-                        </div>
-
-                        <hr class="my-3">
-
-                        <h6 class="fw-bold mb-2"><i class="fa-solid fa-folder-tree text-primary me-2"></i> Category Module Toggles</h6>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" name="cat_project_enabled" value="1" id="chk_cat_project" <?= $catProjectEnabled === '1' ? 'checked' : '' ?>>
-                            <label class="form-check-label small fw-bold" for="chk_cat_project">Enable Projects Category</label>
-                        </div>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" name="cat_support_enabled" value="1" id="chk_cat_support" <?= $catSupportEnabled === '1' ? 'checked' : '' ?>>
-                            <label class="form-check-label small fw-bold" for="chk_cat_support">Enable Support Activities Category</label>
-                        </div>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" name="cat_maintenance_enabled" value="1" id="chk_cat_maint" <?= $catMaintenanceEnabled === '1' ? 'checked' : '' ?>>
-                            <label class="form-check-label small fw-bold" for="chk_cat_maint">Enable Maintenance Activities Category</label>
                         </div>
                     </div>
                 </div>

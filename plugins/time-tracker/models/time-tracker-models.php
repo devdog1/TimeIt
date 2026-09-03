@@ -19,9 +19,21 @@ class TimeTrackerModel {
 
     public static function installTables() {
         $pdb = self::getPdb();
+
+        $pdb->createTable('categories', "
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            slug VARCHAR(64) NOT NULL UNIQUE,
+            name VARCHAR(255) NOT NULL,
+            description TEXT NULL,
+            is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+            is_custom TINYINT(1) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_is_enabled (is_enabled)
+        ");
+
         $pdb->createTable('items', "
             id INT AUTO_INCREMENT PRIMARY KEY,
-            category ENUM('project', 'support', 'maintenance') NOT NULL DEFAULT 'project',
+            category VARCHAR(64) NOT NULL DEFAULT 'project',
             name VARCHAR(255) NOT NULL,
             description TEXT NULL,
             estimated_hours DECIMAL(8,2) NULL,
@@ -33,6 +45,9 @@ class TimeTrackerModel {
             KEY idx_is_active (is_active),
             KEY idx_is_archived (is_archived)
         ");
+
+        // Seed default categories
+        self::seedDefaultCategories();
 
         $pdb->createTable('tasks', "
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -375,14 +390,105 @@ class TimeTrackerModel {
         return true;
     }
 
+    /* ================= DYNAMIC CATEGORY METHODS ================= */
+
+    public static function seedDefaultCategories() {
+        $defaults = [
+            ['slug' => 'project', 'name' => 'Projects', 'description' => 'IT Projects and Capital Deliverables', 'is_custom' => 0],
+            ['slug' => 'support', 'name' => 'Support Activities', 'description' => 'Tier 1-3 Tickets, Troubleshooting, and Helpdesk', 'is_custom' => 0],
+            ['slug' => 'maintenance', 'name' => 'Maintenance Activities', 'description' => 'System Patching, Upgrades, and Backups', 'is_custom' => 0]
+        ];
+
+        foreach ($defaults as $d) {
+            try {
+                self::saveCategory(0, $d['slug'], $d['name'], $d['description'], 1, $d['is_custom']);
+            } catch (Exception $e) {}
+        }
+    }
+
+    public static function getCategories($enabledOnly = false) {
+        $pdb = self::getPdb();
+        $tbCats = $pdb->getTableName('categories');
+
+        $whereSql = $enabledOnly ? "WHERE is_enabled = 1" : "";
+        $stmt = $pdb->query("SELECT * FROM {$tbCats} {$whereSql} ORDER BY is_custom ASC, name ASC");
+        $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($categories)) {
+            self::seedDefaultCategories();
+            $stmt = $pdb->query("SELECT * FROM {$tbCats} {$whereSql} ORDER BY is_custom ASC, name ASC");
+            $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+
+        return $categories;
+    }
+
+    public static function getCategoryBySlug($slug) {
+        $pdb = self::getPdb();
+        $tbCats = $pdb->getTableName('categories');
+        $stmt = $pdb->query("SELECT * FROM {$tbCats} WHERE slug = ?", [$slug]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public static function saveCategory($id, $slug, $name, $description = '', $isEnabled = 1, $isCustom = 1) {
+        $pdb = self::getPdb();
+        $tbCats = $pdb->getTableName('categories');
+
+        $cleanSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', strtolower(trim($slug)));
+        if (empty($cleanSlug)) {
+            throw new Exception("Category slug identifier cannot be empty.");
+        }
+        if (empty(trim($name))) {
+            throw new Exception("Category display name cannot be empty.");
+        }
+
+        $enabledVal = $isEnabled ? 1 : 0;
+        $customVal = $isCustom ? 1 : 0;
+
+        if ($id > 0) {
+            $pdb->query("UPDATE {$tbCats} SET name = ?, description = ?, is_enabled = ? WHERE id = ?", [trim($name), trim($description), $enabledVal, $id]);
+            return $id;
+        } else {
+            // Check for slug uniqueness
+            $existing = self::getCategoryBySlug($cleanSlug);
+            if ($existing) {
+                // If existing, update it
+                $pdb->query("UPDATE {$tbCats} SET name = ?, description = ?, is_enabled = ? WHERE slug = ?", [trim($name), trim($description), $enabledVal, $cleanSlug]);
+                return $existing['id'];
+            }
+
+            $pdb->query("INSERT INTO {$tbCats} (slug, name, description, is_enabled, is_custom) VALUES (?, ?, ?, ?, ?)", [$cleanSlug, trim($name), trim($description), $enabledVal, $customVal]);
+            return get_db_connection()->lastInsertId();
+        }
+    }
+
+    public static function toggleCategoryEnabled($id, $isEnabled) {
+        $pdb = self::getPdb();
+        $tbCats = $pdb->getTableName('categories');
+        $pdb->query("UPDATE {$tbCats} SET is_enabled = ? WHERE id = ?", [$isEnabled ? 1 : 0, $id]);
+        return true;
+    }
+
+    public static function deleteCategory($id) {
+        $pdb = self::getPdb();
+        $tbCats = $pdb->getTableName('categories');
+        $stmt = $pdb->query("SELECT * FROM {$tbCats} WHERE id = ?", [$id]);
+        $cat = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$cat) return false;
+        if ($cat['is_custom'] == 0) {
+            throw new Exception("System default categories cannot be deleted.");
+        }
+
+        $pdb->query("DELETE FROM {$tbCats} WHERE id = ?", [$id]);
+        return true;
+    }
+
     /* ================= ITEMS & PROJECTS METHODS ================= */
 
     public static function getEnabledCategoryTypes() {
-        $cats = [];
-        if (self::getSetting('cat_project_enabled', '1') === '1') $cats[] = 'project';
-        if (self::getSetting('cat_support_enabled', '1') === '1') $cats[] = 'support';
-        if (self::getSetting('cat_maintenance_enabled', '1') === '1') $cats[] = 'maintenance';
-        return $cats;
+        $cats = self::getCategories(true);
+        return array_column($cats, 'slug');
     }
 
     public static function getItems($category = null, $activeOnly = false, $includeArchived = false) {
