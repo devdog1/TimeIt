@@ -3,6 +3,7 @@
 $users = TimeTrackerModel::getAllUsers();
 $items = TimeTrackerModel::getItems();
 $teams = TimeTrackerModel::getTeams();
+$enabledCategories = TimeTrackerModel::getCategories(true);
 
 $activeTab = $_GET['tab'] ?? 'users'; // 'users', 'projects', 'categories', 'all_tasks'
 
@@ -235,9 +236,11 @@ if (isset($_GET['supervisor_edit_task'])) {
                     <label class="form-label small fw-bold">Category</label>
                     <select name="category" class="form-select form-select-sm">
                         <option value="">All Categories</option>
-                        <option value="project" <?= $filterCategory === 'project' ? 'selected' : '' ?>>Projects</option>
-                        <option value="support" <?= $filterCategory === 'support' ? 'selected' : '' ?>>Support Activities</option>
-                        <option value="maintenance" <?= $filterCategory === 'maintenance' ? 'selected' : '' ?>>Maintenance Activities</option>
+                        <?php foreach ($enabledCategories as $cat): ?>
+                            <option value="<?= htmlspecialchars($cat['slug']) ?>" <?= $filterCategory === $cat['slug'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($cat['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
 
@@ -381,20 +384,22 @@ if (isset($_GET['supervisor_edit_task'])) {
     <?php if ($activeTab === 'categories'): ?>
         <div class="row g-4">
             <?php
-            $cats = [
-                'project' => ['title' => 'Projects Overview', 'color' => 'primary'],
-                'support' => ['title' => 'Support Activities Overview', 'color' => 'info'],
-                'maintenance' => ['title' => 'Maintenance Activities Overview', 'color' => 'warning']
-            ];
-            foreach ($cats as $ckey => $cdata):
+            $colors = ['primary', 'info', 'warning', 'success', 'danger', 'dark'];
+            $colorIdx = 0;
+            foreach ($enabledCategories as $cat):
+                $ckey = $cat['slug'];
+                $cTitle = $cat['name'] . ' Overview';
+                $cColor = $colors[$colorIdx % count($colors)];
+                $colorIdx++;
+
                 $cItems = array_filter($items, function($i) use ($ckey) { return $i['category'] === $ckey; });
                 $cTotal = array_sum(array_column($cItems, 'actual_hours'));
             ?>
                 <div class="col-md-4">
-                    <div class="card shadow-sm border-0 border-top border-4 border-<?= $cdata['color'] ?>">
+                    <div class="card shadow-sm border-0 border-top border-4 border-<?= $cColor ?>">
                         <div class="card-header bg-light py-3 d-flex justify-content-between align-items-center">
-                            <h6 class="fw-bold mb-0 text-dark"><?= $cdata['title'] ?></h6>
-                            <span class="badge bg-<?= $cdata['color'] ?> fs-6"><?= number_format($cTotal, 2) ?> hrs</span>
+                            <h6 class="fw-bold mb-0 text-dark"><?= htmlspecialchars($cTitle) ?></h6>
+                            <span class="badge bg-<?= $cColor ?> fs-6"><?= number_format($cTotal, 2) ?> hrs</span>
                         </div>
                         <div class="card-body p-0">
                             <ul class="list-group list-group-flush">

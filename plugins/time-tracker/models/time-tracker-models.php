@@ -498,7 +498,7 @@ class TimeTrackerModel {
         $where = [];
         $params = [];
 
-        if ($category && in_array($category, ['project', 'support', 'maintenance'])) {
+        if ($category) {
             $where[] = "category = ?";
             $params[] = $category;
         }
@@ -582,8 +582,12 @@ class TimeTrackerModel {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
 
-        if (!in_array($category, ['project', 'support', 'maintenance'])) {
-            throw new Exception("Invalid category selected.");
+        $validCategories = self::getEnabledCategoryTypes();
+        if (empty($validCategories)) {
+            $validCategories = array_column(self::getCategories(false), 'slug');
+        }
+        if (!in_array($category, $validCategories)) {
+            throw new Exception("Invalid category selected. Category '$category' is not enabled or does not exist.");
         }
         if (empty(trim($name))) {
             throw new Exception("Item name cannot be empty.");

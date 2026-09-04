@@ -2,13 +2,12 @@
 $userId = $_SESSION['user_id'] ?? 0;
 $items = TimeTrackerModel::getItems(null, true);
 $activeTask = TimeTrackerModel::getActiveTaskForUser($userId);
+$enabledCategories = TimeTrackerModel::getCategories(true);
 
 // Filter parameters
 $catFilter = $_GET['category'] ?? '';
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-t');
-
-$enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
 
 $tasks = TimeTrackerModel::getTasks($userId, $startDate, $endDate, null, $catFilter);
 $totalHours = array_sum(array_column($tasks, 'hours'));
@@ -21,6 +20,8 @@ if (isset($_GET['edit_task'])) {
         $editTask = null;
     }
 }
+
+$enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
 ?>
 
 <div class="container-fluid py-3">
@@ -152,13 +153,13 @@ if (isset($_GET['edit_task'])) {
                     <label class="form-label fw-bold small">Applied Category / Project</label>
                     <select name="item_id" class="form-select" required>
                         <option value="">-- Select Project / Activity --</option>
-                        <?php
-                        $categories = ['project' => 'Projects', 'support' => 'Support Activities', 'maintenance' => 'Maintenance Activities'];
-                        foreach ($categories as $catKey => $catLabel):
-                            $catItems = array_filter($items, function($i) use ($catKey) { return $i['category'] === $catKey; });
+                        <?php foreach ($enabledCategories as $cat):
+                            $catSlug = $cat['slug'];
+                            $catName = $cat['name'];
+                            $catItems = array_filter($items, function($i) use ($catSlug) { return $i['category'] === $catSlug; });
                             if (empty($catItems)) continue;
                         ?>
-                            <optgroup label="<?= $catLabel ?>">
+                            <optgroup label="<?= htmlspecialchars($catName) ?>">
                                 <?php foreach ($catItems as $item): ?>
                                     <option value="<?= $item['id'] ?>" <?= ($editTask && $editTask['item_id'] == $item['id']) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($item['name']) ?>
@@ -227,9 +228,11 @@ if (isset($_GET['edit_task'])) {
                     <label class="form-label small fw-bold">Category Filter</label>
                     <select name="category" class="form-select form-select-sm">
                         <option value="">All Categories</option>
-                        <option value="project" <?= $catFilter === 'project' ? 'selected' : '' ?>>Projects</option>
-                        <option value="support" <?= $catFilter === 'support' ? 'selected' : '' ?>>Support Activities</option>
-                        <option value="maintenance" <?= $catFilter === 'maintenance' ? 'selected' : '' ?>>Maintenance Activities</option>
+                        <?php foreach ($enabledCategories as $cat): ?>
+                            <option value="<?= htmlspecialchars($cat['slug']) ?>" <?= $catFilter === $cat['slug'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($cat['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-3">
@@ -270,10 +273,10 @@ if (isset($_GET['edit_task'])) {
                             </tr>
                         <?php else: ?>
                             <?php foreach ($tasks as $task):
-                                $badgeClass = 'bg-secondary';
-                                if ($task['item_category'] === 'project') $badgeClass = 'bg-primary';
-                                elseif ($task['item_category'] === 'support') $badgeClass = 'bg-info text-dark';
+                                $badgeClass = 'bg-primary';
+                                if ($task['item_category'] === 'support') $badgeClass = 'bg-info text-dark';
                                 elseif ($task['item_category'] === 'maintenance') $badgeClass = 'bg-warning text-dark';
+                                elseif ($task['item_category'] !== 'project') $badgeClass = 'bg-secondary';
                             ?>
                                 <tr>
                                     <td>

@@ -3,6 +3,7 @@
 $users = TimeTrackerModel::getAllUsers();
 $items = TimeTrackerModel::getItems();
 $teams = TimeTrackerModel::getTeams();
+$enabledCategories = TimeTrackerModel::getCategories(true);
 
 $filterUserId = isset($_GET['user_id']) && $_GET['user_id'] !== '' ? (int)$_GET['user_id'] : null;
 $filterCategory = isset($_GET['category']) && $_GET['category'] !== '' ? $_GET['category'] : null;
@@ -134,9 +135,11 @@ $exportCsvUrl = "index.php?route=time_tracker_finance&export_csv=1&start_date={$
                     <label class="form-label small fw-bold">Category</label>
                     <select name="category" class="form-select form-select-sm">
                         <option value="">All Categories</option>
-                        <option value="project" <?= $filterCategory === 'project' ? 'selected' : '' ?>>Projects</option>
-                        <option value="support" <?= $filterCategory === 'support' ? 'selected' : '' ?>>Support Activities</option>
-                        <option value="maintenance" <?= $filterCategory === 'maintenance' ? 'selected' : '' ?>>Maintenance Activities</option>
+                        <?php foreach ($enabledCategories as $cat): ?>
+                            <option value="<?= htmlspecialchars($cat['slug']) ?>" <?= $filterCategory === $cat['slug'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($cat['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
 
