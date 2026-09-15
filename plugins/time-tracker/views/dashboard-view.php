@@ -172,7 +172,7 @@ $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime
 
                 <div class="col-md-1">
                     <label class="form-label fw-bold small">Hours</label>
-                    <input type="number" step="0.25" min="0" name="hours" class="form-control" placeholder="0.00" value="<?= htmlspecialchars($editTask['hours'] ?? '') ?>">
+                    <input type="number" step="0.1" min="0.1" max="23.9" name="hours" class="form-control" placeholder="0.0" value="<?= htmlspecialchars($editTask['hours'] ?? '') ?>">
                 </div>
 
                 <div class="col-md-2">

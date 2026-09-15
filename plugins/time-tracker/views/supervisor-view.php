@@ -138,7 +138,7 @@ if (isset($_GET['supervisor_edit_task'])) {
 
                     <div class="col-md-1">
                         <label class="form-label fw-bold small">Hours</label>
-                        <input type="number" step="0.25" min="0.1" name="hours" class="form-control" value="<?= htmlspecialchars($editSupervisorTask['hours']) ?>" required>
+                        <input type="number" step="0.1" min="0.1" max="23.9" name="hours" class="form-control" value="<?= htmlspecialchars($editSupervisorTask['hours']) ?>" required>
                     </div>
 
                     <div class="col-md-2">

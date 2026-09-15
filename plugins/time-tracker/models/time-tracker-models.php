@@ -1075,8 +1075,8 @@ class TimeTrackerModel {
         }
 
         $numHours = (float)$hours;
-        if ($numHours <= 0 && $status === 'completed') {
-            throw new Exception("Number of hours spent must be greater than 0.");
+        if (($numHours < 0.1 || $numHours > 23.9) && $status === 'completed') {
+            throw new Exception("Number of hours spent must be between 0.1 and 23.9 hours.");
         }
 
         if (!$itemId || (int)$itemId <= 0) {

@@ -613,7 +613,7 @@ add_action('index_dashboard_widgets', function($userContext) {
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <input type="number" step="0.25" min="0.1" name="hours" class="form-control form-control-sm" placeholder="Hours" required>
+                            <input type="number" step="0.1" min="0.1" max="23.9" name="hours" class="form-control form-control-sm" placeholder="Hours" required>
                         </div>
                         <div class="col-md-3">
                             <input type="datetime-local" name="entry_datetime" class="form-control form-control-sm" value="<?= date('Y-m-d\TH:i') ?>" required>
@@ -690,7 +690,7 @@ add_action('index_dashboard_widgets', function($userContext) {
 
                                             <div class="mb-3">
                                                 <label class="form-label small fw-bold">Hours Spent</label>
-                                                <input type="number" step="0.25" min="0.1" name="hours_spent" class="form-control form-control-sm" placeholder="e.g. 1.5" value="<?= htmlspecialchars($pr['allocated_hours'] ?? '') ?>" required>
+                                                <input type="number" step="0.1" min="0.1" max="23.9" name="hours_spent" class="form-control form-control-sm" placeholder="e.g. 1.5" value="<?= htmlspecialchars($pr['allocated_hours'] ?? '') ?>" required>
                                                 <?php if (!empty($pr['allocated_hours'])): ?>
                                                     <div class="form-text small">Pre-filled with manager allocated time (<?= number_format($pr['allocated_hours'], 2) ?> hrs). You may adjust if needed.</div>
                                                 <?php endif; ?>
