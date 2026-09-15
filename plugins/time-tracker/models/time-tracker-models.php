@@ -203,6 +203,14 @@ class TimeTrackerModel {
                 "UPDATE {$tbTasks} SET status = 'completed', hours = ?, last_checkin_at = ? WHERE id = ?",
                 [$elapsedHours, $now, $taskId]
             );
+
+            // Also mark linked recurring task instance as completed
+            $tbInst = $pdb->getTableName('recurring_instances');
+            $pdb->query(
+                "UPDATE {$tbInst} SET status = 'completed', completed_at = ? WHERE completed_task_id = ? AND status = 'pending'",
+                [$now, $taskId]
+            );
+
             return 'finished';
         } else { // 'still_working'
             $startTs = strtotime($task['entry_datetime']);
@@ -1074,6 +1082,15 @@ class TimeTrackerModel {
                 "UPDATE {$tbTasks} SET user_id = ?, item_id = ?, task_name = ?, ticket_ref = ?, is_billable = ?, is_overtime = ?, hours = ?, entry_datetime = ?, status = ? WHERE id = ?",
                 [$userId, $itemId, trim($taskName), trim($ticketRef), $isBillable ? 1 : 0, $isOvertime ? 1 : 0, $numHours, $formattedDt, $status, $taskId]
             );
+
+            if ($status === 'completed') {
+                $tbInst = $pdb->getTableName('recurring_instances');
+                $pdb->query(
+                    "UPDATE {$tbInst} SET status = 'completed', completed_at = ? WHERE completed_task_id = ? AND status = 'pending'",
+                    [date('Y-m-d H:i:s'), $taskId]
+                );
+            }
+
             return $taskId;
         } else {
             $pdb->query(
