@@ -128,6 +128,36 @@ class TimeTrackerModel {
         ");
     }
 
+    public static function uninstallTables() {
+        $pdb = self::getPdb();
+        $tables = [
+            'settings',
+            'recurring_instances',
+            'recurring_tasks',
+            'team_members',
+            'teams',
+            'tasks',
+            'items',
+            'categories'
+        ];
+
+        $db = get_db_connection();
+        try {
+            $db->exec("SET FOREIGN_KEY_CHECKS = 0");
+        } catch (Exception $e) {}
+
+        foreach ($tables as $tbl) {
+            try {
+                $tableName = $pdb->getTableName($tbl);
+                $db->exec("DROP TABLE IF EXISTS {$tableName}");
+            } catch (Exception $e) {}
+        }
+
+        try {
+            $db->exec("SET FOREIGN_KEY_CHECKS = 1");
+        } catch (Exception $e) {}
+    }
+
     /* ================= ACTIVE TASK TIMER & CHECKIN METHODS ================= */
 
     public static function getActiveTaskForUser($userId) {

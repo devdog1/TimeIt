@@ -46,6 +46,44 @@ add_action('plugin_activate_time-tracker', function() {
     TimeTrackerModel::installTables();
 });
 
+// Plugin deactivation, uninstall, and purge hooks: drop database tables when purge option requested or when uninstalling
+add_action('plugin_deactivate_time-tracker', function($purge = false) {
+    $shouldPurge = $purge
+        || (isset($_POST['purge_data']) && $_POST['purge_data'])
+        || (isset($_POST['purge']) && $_POST['purge'])
+        || (isset($_REQUEST['purge_data']) && $_REQUEST['purge_data'])
+        || (isset($_REQUEST['purge']) && $_REQUEST['purge'])
+        || (isset($_POST['drop_tables']) && $_POST['drop_tables'])
+        || (isset($_REQUEST['drop_tables']) && $_REQUEST['drop_tables']);
+
+    if ($shouldPurge) {
+        TimeTrackerModel::uninstallTables();
+    }
+});
+
+add_action('plugin_deactivate', function($pluginSlug = '') {
+    if ($pluginSlug === 'time-tracker') {
+        $shouldPurge = (isset($_POST['purge_data']) && $_POST['purge_data'])
+            || (isset($_POST['purge']) && $_POST['purge'])
+            || (isset($_REQUEST['purge_data']) && $_REQUEST['purge_data'])
+            || (isset($_REQUEST['purge']) && $_REQUEST['purge'])
+            || (isset($_POST['drop_tables']) && $_POST['drop_tables'])
+            || (isset($_REQUEST['drop_tables']) && $_REQUEST['drop_tables']);
+
+        if ($shouldPurge) {
+            TimeTrackerModel::uninstallTables();
+        }
+    }
+});
+
+add_action('plugin_uninstall_time-tracker', function() {
+    TimeTrackerModel::uninstallTables();
+});
+
+add_action('plugin_purge_time-tracker', function() {
+    TimeTrackerModel::uninstallTables();
+});
+
 // Register Scheduler API background tasks
 add_action('init_scheduler', function($scheduler) {
     if (method_exists($scheduler, 'registerTask')) {
