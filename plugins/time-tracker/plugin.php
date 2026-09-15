@@ -493,6 +493,7 @@ add_filter('theme_nav_links', function($links) {
     $children = [
         ['label' => 'My Tasks', 'icon' => 'fa-solid fa-list-check', 'route' => 'time_tracker'],
         ['label' => 'Calendar View', 'icon' => 'fa-solid fa-calendar-days', 'route' => 'time_tracker_calendar'],
+        ['label' => 'Team Calendar', 'icon' => 'fa-solid fa-users-viewfinder', 'route' => 'time_tracker_team_calendar'],
         ['label' => 'Projects & Categories', 'icon' => 'fa-solid fa-folder-tree', 'route' => 'time_tracker_items']
     ];
 
@@ -818,6 +819,11 @@ function time_tracker_handle_posts() {
             TimeTrackerModel::completeRecurringInstance($instanceId, $userId, $hoursSpent, $notes);
             $_SESSION['tt_success'] = "Critical task marked completed and time logged successfully!";
         }
+        elseif ($action === 'claim_recurring_instance') {
+            $instanceId = (int)($_POST['instance_id'] ?? 0);
+            TimeTrackerModel::claimAndStartRecurringInstance($instanceId, $userId);
+            $_SESSION['tt_success'] = "You have taken ownership of this task! Timer started in 'working on' state.";
+        }
         elseif ($action === 'save_category') {
             if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
             $catId = (int)($_POST['category_id'] ?? 0);
@@ -967,6 +973,14 @@ add_action('register_routes', function() {
         }
         time_tracker_handle_posts();
         require_once __DIR__ . '/views/teams-view.php';
+    });
+
+    register_route('time_tracker_team_calendar', function() {
+        if (!has_permission('time_tracker_user_access') && !has_permission('time_tracker_supervisor_access') && !has_permission('time_tracker_finance_access') && !has_role('administrator')) {
+            die('Access Denied: You do not have permission to access Time Tracker.');
+        }
+        time_tracker_handle_posts();
+        require_once __DIR__ . '/views/team-calendar-view.php';
     });
 
     register_route('time_tracker_timesheet', function() {

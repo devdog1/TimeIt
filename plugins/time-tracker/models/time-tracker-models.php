@@ -508,6 +508,40 @@ class TimeTrackerModel {
         return $instances;
     }
 
+    public static function claimAndStartRecurringInstance($instanceId, $userId) {
+        $pdb = self::getPdb();
+        $tbInst = $pdb->getTableName('recurring_instances');
+        $tbRt = $pdb->getTableName('recurring_tasks');
+
+        $stmt = $pdb->query("SELECT ri.*, rt.task_name, rt.item_id FROM {$tbInst} ri INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id WHERE ri.id = ?", [$instanceId]);
+        $instance = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$instance) {
+            throw new Exception("Recurring task instance not found.");
+        }
+        if ($instance['status'] === 'completed') {
+            throw new Exception("This task instance has already been completed.");
+        }
+
+        // Check if user has an existing active task timer
+        $activeTask = self::getActiveTaskForUser($userId);
+        if ($activeTask) {
+            throw new Exception("You already have an active running task ('" . htmlspecialchars($activeTask['task_name']) . "'). Please mark it as finished before claiming a new one.");
+        }
+
+        // Create in_progress task entry assigned to this user and start live timer
+        $taskId = self::startTaskTimer($userId, $instance['item_id'], $instance['task_name']);
+
+        // Update instance with completed_by_user_id (ownership claim) and link task
+        $now = date('Y-m-d H:i:s');
+        $pdb->query(
+            "UPDATE {$tbInst} SET completed_by_user_id = ?, completed_task_id = ? WHERE id = ?",
+            [$userId, $taskId, $instanceId]
+        );
+
+        return $taskId;
+    }
+
     public static function completeRecurringInstance($instanceId, $userId, $hoursSpent, $notes = '', $entryDatetime = null) {
         $pdb = self::getPdb();
         $tbInst = $pdb->getTableName('recurring_instances');
@@ -526,8 +560,17 @@ class TimeTrackerModel {
         $dt = $entryDatetime ? date('Y-m-d H:i:s', strtotime($entryDatetime)) : date('Y-m-d H:i:s');
         $taskName = $instance['task_name'] . (!empty($notes) ? " - " . trim($notes) : "");
 
-        // Create actual completed task entry in plug_time_tracker_tasks
-        $taskId = self::saveTask(0, $userId, $instance['item_id'], $taskName, $hoursSpent, $dt, 'completed');
+        if (!empty($instance['completed_task_id'])) {
+            // Task timer was already created when user claimed ownership ("working on state")
+            $taskId = $instance['completed_task_id'];
+            $pdb->query(
+                "UPDATE {$pdb->getTableName('tasks')} SET status = 'completed', hours = ?, task_name = ? WHERE id = ?",
+                [$hoursSpent, $taskName, $taskId]
+            );
+        } else {
+            // Create actual completed task entry in plug_time_tracker_tasks
+            $taskId = self::saveTask(0, $userId, $instance['item_id'], $taskName, $hoursSpent, $dt, 'completed');
+        }
 
         // Mark recurring instance as completed
         $now = date('Y-m-d H:i:s');
@@ -537,6 +580,45 @@ class TimeTrackerModel {
         );
 
         return $taskId;
+    }
+
+    public static function getTeamCalendarTasksAndInstances($teamId, $month = null, $year = null) {
+        if (!$month) $month = date('m');
+        if (!$year) $year = date('Y');
+
+        $startDate = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $lastDay = date('t', strtotime($startDate));
+        $endDate = sprintf('%04d-%02d-%02d 23:59:59', $year, $month, $lastDay);
+
+        // Fetch tasks logged for members of this team
+        $completedTasks = self::getTasks(null, $startDate, $endDate, null, null, $teamId);
+
+        // Fetch pending/in_progress recurring instances for this team
+        $pdb = self::getPdb();
+        $tbInst = $pdb->getTableName('recurring_instances');
+        $tbRt = $pdb->getTableName('recurring_tasks');
+        $tbItems = $pdb->getTableName('items');
+
+        $sql = "SELECT ri.*, rt.task_name, rt.description as task_desc, rt.frequency, rt.item_id,
+                       i.name as item_name, i.category as item_category
+                FROM {$tbInst} ri
+                INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id
+                INNER JOIN {$tbItems} i ON rt.item_id = i.id
+                WHERE ri.team_id = ? AND ri.due_date >= ? AND ri.due_date <= ?
+                ORDER BY ri.due_date ASC";
+
+        $stmt = $pdb->query($sql, [$teamId, sprintf('%04d-%02d-01', $year, $month), sprintf('%04d-%02d-%02d', $year, $month, $lastDay)]);
+        $instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($instances as &$inst) {
+            $inst['due_status'] = self::getRecurringInstanceDueStatus($inst['due_date']);
+            $inst['assigned_user_name'] = $inst['completed_by_user_id'] ? self::getUserName($inst['completed_by_user_id']) : null;
+        }
+
+        return [
+            'tasks' => $completedTasks,
+            'instances' => $instances
+        ];
     }
 
     /* ================= TEAMS METHODS ================= */
