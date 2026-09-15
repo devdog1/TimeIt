@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: IT Time Tracker
- * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with financial year reports, teams, scheduled email reports, and Chrome Service Worker 15-minute active task check-ins.
- * Version: 1.5.0
+ * Description: Clockify-style time tracking system for IT support, maintenance activities, and projects with financial year reports, teams, scheduled email reports, Mon-Fri 9 AM Team Manager task completion reports, and Chrome Service Worker 15-minute active task check-ins.
+ * Version: 1.6.0
  * Author: DevDog
  * Permissions: user_access, supervisor_access, finance_access
  * Roles: user:user_access; supervisor:user_access,supervisor_access; finance:user_access,finance_access
@@ -57,6 +57,14 @@ add_action('init_scheduler', function($scheduler) {
             'time-tracker'
         );
 
+        // Mon-Fri 9 AM Team Manager task completion report check (3600 seconds)
+        $scheduler->registerTask(
+            'send_team_manager_reports',
+            'time_tracker_send_team_manager_daily_reports',
+            3600,
+            'time-tracker'
+        );
+
         // 15-minute active task check-in background runner (900 seconds)
         $scheduler->registerTask(
             'check_active_tasks',
@@ -78,6 +86,160 @@ add_action('init_scheduler', function($scheduler) {
 function time_tracker_generate_recurring_tasks() {
     TimeTrackerModel::generatePendingRecurringInstances();
     echo "[TimeTracker Recurring Generator] Evaluated recurring critical tasks.\n";
+}
+
+// Helper: Generate Full Task Completion Report HTML for Team Managers
+function time_tracker_generate_team_manager_task_completion_report_html($teamId, $startDate = null, $endDate = null) {
+    if (!$startDate) $startDate = date('Y-m-d', strtotime('-1 day'));
+    if (!$endDate) $endDate = date('Y-m-d');
+
+    $team = TimeTrackerModel::getTeamById($teamId);
+    $teamName = $team ? $team['name'] : "Team #{$teamId}";
+    $supervisorName = $team ? $team['supervisor_name'] : "Team Manager";
+
+    $tasks = TimeTrackerModel::getTasks(null, $startDate, $endDate, null, null, $teamId);
+    $totalHours = array_sum(array_column($tasks, 'hours'));
+
+    // Group tasks by User
+    $grouped = [];
+    foreach ($tasks as $t) {
+        $uname = $t['user_name'];
+        if (!isset($grouped[$uname])) {
+            $grouped[$uname] = [
+                'user_name' => $uname,
+                'total_hours' => 0.0,
+                'tasks' => []
+            ];
+        }
+        $grouped[$uname]['total_hours'] += (float)$t['hours'];
+        $grouped[$uname]['tasks'][] = $t;
+    }
+
+    ob_start();
+    ?>
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 850px; margin: 0 auto; border: 1px solid #c0c0c0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <div style="background-color: #198754; color: #ffffff; padding: 22px;">
+            <h2 style="margin: 0; font-size: 22px;">📋 Team Manager Task Completion Report</h2>
+            <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95;">
+                Team: <strong><?= htmlspecialchars($teamName) ?></strong> &bull; Manager: <strong><?= htmlspecialchars($supervisorName) ?></strong>
+            </p>
+            <p style="margin: 4px 0 0 0; font-size: 13px; opacity: 0.85;">
+                Reporting Window: <strong><?= date('M d, Y', strtotime($startDate)) ?> &mdash; <?= date('M d, Y', strtotime($endDate)) ?></strong>
+            </p>
+        </div>
+
+        <div style="padding: 18px 22px; background-color: #f8f9fa; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 15px; font-weight: bold;">Total Team Completed Hours Logged:</span>
+            <span style="font-size: 18px; font-weight: bold; color: #198754; background: #e8f5e9; padding: 4px 14px; border-radius: 20px; border: 1px solid #c8e6c9;">
+                <?= number_format($totalHours, 2) ?> hrs
+            </span>
+        </div>
+
+        <div style="padding: 22px;">
+            <?php if (empty($grouped)): ?>
+                <p style="color: #6c757d; font-style: italic; text-align: center; padding: 20px 0;">No team tasks were completed during this reporting window.</p>
+            <?php else: ?>
+                <?php foreach ($grouped as $userRow): ?>
+                    <div style="margin-bottom: 25px; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px; background-color: #ffffff;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #198754; padding-bottom: 8px; margin-bottom: 14px;">
+                            <h3 style="margin: 0; font-size: 16px; color: #198754;">
+                                👤 <?= htmlspecialchars($userRow['user_name']) ?>
+                            </h3>
+                            <span style="font-weight: bold; font-size: 14px; color: #198754;">
+                                Total: <?= number_format($userRow['total_hours'], 2) ?> hrs
+                            </span>
+                        </div>
+
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead>
+                                <tr style="background-color: #f1f3f5; text-align: left; color: #495057;">
+                                    <th style="padding: 8px; border: 1px solid #dee2e6;">Completion Time</th>
+                                    <th style="padding: 8px; border: 1px solid #dee2e6;">Ticket Ref</th>
+                                    <th style="padding: 8px; border: 1px solid #dee2e6;">Applied Project / Item</th>
+                                    <th style="padding: 8px; border: 1px solid #dee2e6;">Task Name & Completion Details</th>
+                                    <th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Time Spent</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($userRow['tasks'] as $tsk): ?>
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #dee2e6; white-space: nowrap;"><?= date('M d, H:i', strtotime($tsk['entry_datetime'])) ?></td>
+                                        <td style="padding: 8px; border: 1px solid #dee2e6; font-family: monospace; font-weight: bold; color: #0d6efd;">
+                                            <?= !empty($tsk['ticket_ref']) ? htmlspecialchars($tsk['ticket_ref']) : '&mdash;' ?>
+                                        </td>
+                                        <td style="padding: 8px; border: 1px solid #dee2e6; font-weight: bold;">
+                                            [<?= ucfirst($tsk['item_category'] ?? '') ?>] <?= htmlspecialchars($tsk['item_name'] ?? 'Unassigned') ?>
+                                        </td>
+                                        <td style="padding: 8px; border: 1px solid #dee2e6;">
+                                            <strong><?= htmlspecialchars($tsk['task_name']) ?></strong>
+                                            <?php if (!empty($tsk['is_overtime'])): ?>
+                                                <span style="background-color: #ffc107; color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 4px;">OVERTIME</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td style="padding: 8px; border: 1px solid #dee2e6; text-align: right; font-weight: bold; color: #198754; white-space: nowrap;">
+                                            <?= number_format($tsk['hours'], 2) ?> hrs
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+
+        <div style="background-color: #f8f9fa; padding: 14px 22px; text-align: center; font-size: 12px; color: #6c757d; border-top: 1px solid #e0e0e0;">
+            Scheduled Mon&ndash;Fri 9 AM Team Manager Report &bull; IT Time Tracker Plugin &bull; Portal Framework
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+// Scheduled Task Runner: Mon-Fri 9 AM Team Manager Task Completion Email Reports
+function time_tracker_send_team_manager_daily_reports() {
+    $enabled = TimeTrackerModel::getSetting('email_team_manager_reports_enabled', '1');
+    if ($enabled !== '1') {
+        echo "[TimeTracker Team Manager Reports] Scheduled manager reports disabled in settings.\n";
+        return;
+    }
+
+    $dayOfWeek = (int)date('N'); // 1 (Mon) - 7 (Sun)
+    $hour = (int)date('G');     // 0 - 23
+
+    // Check if Mon-Fri (1-5) and 9 AM hour
+    if ($dayOfWeek > 5) {
+        echo "[TimeTracker Team Manager Reports] Weekend day ($dayOfWeek). Skipping Mon-Fri report delivery.\n";
+        return;
+    }
+
+    $teams = TimeTrackerModel::getTeams();
+    $countSent = 0;
+
+    foreach ($teams as $team) {
+        $supUserId = $team['supervisor_user_id'];
+        if (!$supUserId) continue;
+
+        $supEmail = TimeTrackerModel::getUserName($supUserId);
+        $reportHtml = time_tracker_generate_team_manager_task_completion_report_html($team['id']);
+
+        $logMsg = sprintf(
+            "[TimeTracker Team Manager Report Mon-Fri 9 AM] Delivered task completion report for team '%s' (ID: %d) to Manager user ID %d (%s). Report size: %d bytes.\n",
+            $team['name'],
+            $team['id'],
+            $supUserId,
+            $supEmail,
+            strlen($reportHtml)
+        );
+
+        echo $logMsg;
+        if (function_exists('log_action')) {
+            log_action('TIME_TRACKER_TEAM_MANAGER_REPORT', ['details' => $logMsg]);
+        }
+        $countSent++;
+    }
+
+    echo sprintf("[TimeTracker Team Manager Reports] Sent reports to %d team managers.\n", $countSent);
 }
 
 // 15-minute active task background check-in runner
@@ -289,7 +451,6 @@ add_action('theme_footer', function() {
         var checkinInterval = 900; // 15 minutes = 900 seconds
         var remainingMs = Math.max(1000, (checkinInterval - elapsedSecs) * 1000);
 
-        // Register Service Worker to handle closed-page background notifications
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('plugins/time-tracker/assets/sw.js')
             .then(function(reg) {
@@ -297,7 +458,6 @@ add_action('theme_footer', function() {
                     Notification.requestPermission();
                 }
 
-                // Delegate notification trigger to Service Worker
                 setTimeout(function() {
                     if (reg.active) {
                         reg.active.postMessage({
@@ -544,7 +704,10 @@ function time_tracker_handle_posts() {
         if ($action === 'start_timer_task') {
             $itemId = (int)($_POST['item_id'] ?? 0);
             $taskName = $_POST['task_name'] ?? '';
-            TimeTrackerModel::startTaskTimer($userId, $itemId, $taskName);
+            $ticketRef = $_POST['ticket_ref'] ?? '';
+            $isBillable = isset($_POST['is_billable']) ? 1 : 0;
+            $isOvertime = isset($_POST['is_overtime']) ? 1 : 0;
+            TimeTrackerModel::startTaskTimer($userId, $itemId, $taskName, $ticketRef, $isBillable, $isOvertime);
             $_SESSION['tt_success'] = "Active task timer started! We will check in with you every 15 minutes.";
         }
         elseif ($action === 'save_task' || $action === 'quick_add_task') {
@@ -691,6 +854,7 @@ function time_tracker_handle_posts() {
 
             $enableTimesheets = isset($_POST['enable_timesheets']) ? '1' : '0';
             $enableBillableOvertime = isset($_POST['enable_billable_overtime']) ? '1' : '0';
+            $emailTeamManagerReports = isset($_POST['email_team_manager_reports_enabled']) ? '1' : '0';
 
             $catProjectEnabled = isset($_POST['cat_project_enabled']) ? '1' : '0';
             $catSupportEnabled = isset($_POST['cat_support_enabled']) ? '1' : '0';
@@ -704,6 +868,7 @@ function time_tracker_handle_posts() {
             TimeTrackerModel::saveSetting('email_reports_type', $emailType);
             TimeTrackerModel::saveSetting('enable_timesheets', $enableTimesheets);
             TimeTrackerModel::saveSetting('enable_billable_overtime', $enableBillableOvertime);
+            TimeTrackerModel::saveSetting('email_team_manager_reports_enabled', $emailTeamManagerReports);
             TimeTrackerModel::saveSetting('cat_project_enabled', $catProjectEnabled);
             TimeTrackerModel::saveSetting('cat_support_enabled', $catSupportEnabled);
             TimeTrackerModel::saveSetting('cat_maintenance_enabled', $catMaintenanceEnabled);
@@ -714,6 +879,11 @@ function time_tracker_handle_posts() {
             if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
             time_tracker_send_scheduled_reports();
             $_SESSION['tt_success'] = "Example weekly team activities report triggered successfully!";
+        }
+        elseif ($action === 'trigger_team_manager_test_email') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            time_tracker_send_team_manager_daily_reports();
+            $_SESSION['tt_success'] = "Mon-Fri 9 AM Team Manager task completion report triggered successfully!";
         }
     } catch (Exception $e) {
         $_SESSION['tt_error'] = $e->getMessage();

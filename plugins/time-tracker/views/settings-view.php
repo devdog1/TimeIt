@@ -10,8 +10,10 @@ $emailType = TimeTrackerModel::getSetting('email_reports_type', 'finance');
 
 $enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
 $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
+$emailTeamManagerReports = TimeTrackerModel::getSetting('email_team_manager_reports_enabled', '1');
 
 $allCategories = TimeTrackerModel::getCategories(false);
+$teams = TimeTrackerModel::getTeams();
 
 $editCategory = null;
 if (isset($_GET['edit_category'])) {
@@ -28,6 +30,7 @@ $months = [
 ];
 
 $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_report'] === '1';
+$previewManagerReport = isset($_GET['preview_manager_report']) && $_GET['preview_manager_report'] === '1';
 ?>
 
 <div class="container-fluid py-3">
@@ -58,7 +61,7 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
         </div>
     <?php endif; ?>
 
-    <!-- Preview Example Weekly Team Activities Report Modal/Box -->
+    <!-- Preview Example Weekly Team Activities Report Box -->
     <?php if ($previewReport): ?>
         <div class="card border-primary shadow-sm mb-4">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
@@ -67,6 +70,22 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
             </div>
             <div class="card-body bg-light p-4">
                 <?= time_tracker_generate_weekly_team_report_html() ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <!-- Preview Example Mon-Fri 9 AM Team Manager Task Completion Report Box -->
+    <?php if ($previewManagerReport): ?>
+        <div class="card border-success shadow-sm mb-4">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="fa-solid fa-clipboard-check me-2"></i> Preview: Mon-Fri 9 AM Team Manager Task Completion Report</span>
+                <a href="index.php?route=time_tracker_settings" class="btn btn-sm btn-light py-0">Close Preview</a>
+            </div>
+            <div class="card-body bg-light p-4">
+                <?php
+                $sampleTeamId = !empty($teams) ? $teams[0]['id'] : 1;
+                echo time_tracker_generate_team_manager_task_completion_report_html($sampleTeamId);
+                ?>
             </div>
         </div>
     <?php endif; ?>
@@ -260,10 +279,17 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                             </label>
                         </div>
 
-                        <div class="form-check form-switch mb-2">
+                        <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" name="enable_billable_overtime" value="1" id="chk_enable_billable_overtime" <?= $enableBillableOvertime === '1' ? 'checked' : '' ?>>
                             <label class="form-check-label fw-bold small" for="chk_enable_billable_overtime">
                                 Enable Billable Hours & Overtime Switches
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="email_team_manager_reports_enabled" value="1" id="chk_manager_reports" <?= $emailTeamManagerReports === '1' ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-bold small text-success" for="chk_manager_reports">
+                                Enable Mon&ndash;Fri 9 AM Team Manager Task Completion Emailed Reports
                             </label>
                         </div>
                     </div>
@@ -309,12 +335,15 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
                             <div class="form-text small">Separate multiple email addresses with commas.</div>
                         </div>
 
-                        <div class="d-flex gap-2 mt-4 pt-2 border-top">
+                        <div class="d-flex flex-wrap gap-2 mt-4 pt-2 border-top">
                             <a href="index.php?route=time_tracker_settings&preview_weekly_report=1" class="btn btn-outline-primary btn-sm flex-grow-1">
-                                <i class="fa-solid fa-eye me-1"></i> Preview Weekly Report HTML
+                                <i class="fa-solid fa-eye me-1"></i> Preview Weekly Report
                             </a>
-                            <button type="submit" form="trigger_test_form" class="btn btn-outline-dark btn-sm flex-grow-1">
-                                <i class="fa-solid fa-paper-plane me-1"></i> Trigger Task Runner Now
+                            <a href="index.php?route=time_tracker_settings&preview_manager_report=1" class="btn btn-outline-success btn-sm flex-grow-1">
+                                <i class="fa-solid fa-clipboard-check me-1"></i> Preview Mon-Fri Manager Report
+                            </a>
+                            <button type="submit" form="trigger_manager_test_form" class="btn btn-outline-dark btn-sm flex-grow-1">
+                                <i class="fa-solid fa-paper-plane me-1"></i> Trigger Mon-Fri 9 AM Runner
                             </button>
                         </div>
                     </div>
@@ -332,5 +361,10 @@ $previewReport = isset($_GET['preview_weekly_report']) && $_GET['preview_weekly_
     <form id="trigger_test_form" action="index.php?route=time_tracker_settings" method="POST" class="d-none">
         <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
         <input type="hidden" name="action" value="trigger_test_email">
+    </form>
+
+    <form id="trigger_manager_test_form" action="index.php?route=time_tracker_settings" method="POST" class="d-none">
+        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+        <input type="hidden" name="action" value="trigger_team_manager_test_email">
     </form>
 </div>

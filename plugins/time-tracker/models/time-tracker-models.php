@@ -429,10 +429,15 @@ class TimeTrackerModel {
         $today = date('Y-m-d');
 
         foreach ($recurringTasks as $rt) {
-            // Check if there is ALREADY an uncompleted pending instance for this recurring task
+            // 1. Skip if there is ALREADY an uncompleted pending instance for this recurring task
             $pendingStmt = $pdb->query("SELECT id FROM {$tbInst} WHERE recurring_task_id = ? AND status = 'pending'", [$rt['id']]);
             if ($pendingStmt->fetch()) {
-                // Do not recreate/generate a new instance if the previous unfinished one is still incomplete
+                continue;
+            }
+
+            // 2. Skip if an instance for today (due_date = today) has ALREADY been generated (even if completed today)
+            $todayStmt = $pdb->query("SELECT id FROM {$tbInst} WHERE recurring_task_id = ? AND due_date = ?", [$rt['id'], $today]);
+            if ($todayStmt->fetch()) {
                 continue;
             }
 
