@@ -601,6 +601,18 @@ add_action('index_dashboard_widgets', function($userContext) {
                             </div>
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge <?= $dueStatus['badge_class'] ?>"><?= htmlspecialchars($dueStatus['label']) ?></span>
+                                <?php if (empty($pr['completed_by_user_id'])): ?>
+                                    <form action="index.php?route=time_tracker" method="POST" class="d-inline">
+                                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                        <input type="hidden" name="action" value="claim_recurring_instance">
+                                        <input type="hidden" name="instance_id" value="<?= $pr['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-danger py-0 px-2 fw-bold">
+                                            <i class="fa-solid fa-hand-pointer me-1"></i> Take Ownership
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="badge bg-warning text-dark"><i class="fa-solid fa-spinner fa-spin me-1"></i> Working On It</span>
+                                <?php endif; ?>
                                 <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" data-bs-toggle="modal" data-bs-target="#completeModal_<?= $pr['id'] ?>">
                                     Complete & Log
                                 </button>
