@@ -127,7 +127,17 @@ foreach ($tasks as $t) {
                         <tr>
                             <td>
                                 <div><?= date('M d, Y', strtotime($t['entry_datetime'])) ?></div>
-                                <small class="text-muted"><?= date('h:i A', strtotime($t['entry_datetime'])) ?></small>
+                                <small class="text-muted">
+                                    <?= date('h:i A', strtotime($t['entry_datetime'])) ?> &ndash;
+                                    <?php
+                                        if (($t['status'] ?? 'completed') === 'in_progress') {
+                                            echo '<span class="text-warning fw-bold">Now</span>';
+                                        } else {
+                                            $endTs = strtotime($t['entry_datetime']) + (int)round(((float)$t['hours']) * 3600);
+                                            echo date('h:i A', $endTs);
+                                        }
+                                    ?>
+                                </small>
                             </td>
                             <td><code><?= !empty($t['ticket_ref']) ? htmlspecialchars($t['ticket_ref']) : '&mdash;' ?></code></td>
                             <td><span class="badge bg-secondary"><?= ucfirst($t['item_category'] ?? '') ?></span></td>

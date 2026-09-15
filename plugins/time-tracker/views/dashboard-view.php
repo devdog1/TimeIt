@@ -281,7 +281,17 @@ $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime
                                 <tr>
                                     <td>
                                         <div class="fw-bold"><?= date('M d, Y', strtotime($task['entry_datetime'])) ?></div>
-                                        <small class="text-muted"><?= date('h:i A', strtotime($task['entry_datetime'])) ?></small>
+                                        <small class="text-muted">
+                                            <?= date('h:i A', strtotime($task['entry_datetime'])) ?> &ndash;
+                                            <?php
+                                                if (($task['status'] ?? 'completed') === 'in_progress') {
+                                                    echo '<span class="text-warning fw-bold">Now</span>';
+                                                } else {
+                                                    $endTs = strtotime($task['entry_datetime']) + (int)round(((float)$task['hours']) * 3600);
+                                                    echo date('h:i A', $endTs);
+                                                }
+                                            ?>
+                                        </small>
                                     </td>
                                     <td>
                                         <span class="badge <?= $badgeClass ?>"><?= ucfirst($task['item_category'] ?? 'N/A') ?></span>

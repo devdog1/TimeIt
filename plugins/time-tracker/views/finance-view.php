@@ -196,7 +196,17 @@ $exportCsvUrl = "index.php?route=time_tracker_finance&export_csv=1&start_date={$
                                     <td class="fw-bold"><i class="fa-solid fa-user me-1 text-secondary"></i> <?= htmlspecialchars($task['user_name']) ?></td>
                                     <td>
                                         <div class="fw-bold small"><?= date('M d, Y', strtotime($task['entry_datetime'])) ?></div>
-                                        <small class="text-muted"><?= date('h:i A', strtotime($task['entry_datetime'])) ?></small>
+                                        <small class="text-muted">
+                                            <?= date('h:i A', strtotime($task['entry_datetime'])) ?> &ndash;
+                                            <?php
+                                                if (($task['status'] ?? 'completed') === 'in_progress') {
+                                                    echo '<span class="text-warning fw-bold">Now</span>';
+                                                } else {
+                                                    $endTs = strtotime($task['entry_datetime']) + (int)round(((float)$task['hours']) * 3600);
+                                                    echo date('h:i A', $endTs);
+                                                }
+                                            ?>
+                                        </small>
                                     </td>
                                     <td><span class="badge <?= $bClass ?>"><?= ucfirst($task['item_category'] ?? 'N/A') ?></span></td>
                                     <td class="fw-bold"><?= htmlspecialchars($task['item_name'] ?? 'Unassigned') ?></td>
