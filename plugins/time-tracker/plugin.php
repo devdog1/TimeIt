@@ -570,6 +570,7 @@ add_action('index_dashboard_widgets', function($userContext) {
     $items = TimeTrackerModel::getItems(null, true);
     $recentTasks = TimeTrackerModel::getTasks($userId, date('Y-m-d'), date('Y-m-d'));
     $todayHours = array_sum(array_column($recentTasks, 'hours'));
+    $activeTask = TimeTrackerModel::getActiveTaskForUser($userId);
 
     $leadProjects = TimeTrackerModel::getProjectsLedByUser($userId);
     ?>
@@ -584,32 +585,46 @@ add_action('index_dashboard_widgets', function($userContext) {
                 <span class="badge bg-primary rounded-pill"><?= number_format($todayHours, 2) ?> hrs logged today</span>
             </div>
             <div class="card-body">
-                <form action="index.php?route=time_tracker" method="POST" class="row g-2">
-                    <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
-                    <input type="hidden" name="action" value="quick_add_task">
-                    <div class="col-md-12">
-                        <input type="text" name="task_name" class="form-control form-control-sm" placeholder="What are you working on?" required>
+                <?php if ($activeTask): ?>
+                    <div class="p-3 bg-primary-subtle border border-primary rounded text-center">
+                        <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
+                            <div class="spinner-grow spinner-grow-sm text-primary" role="status"></div>
+                            <span class="badge bg-primary text-uppercase">Running Task Active</span>
+                        </div>
+                        <h6 class="fw-bold mb-1 text-dark"><?= htmlspecialchars($activeTask['task_name']) ?></h6>
+                        <small class="text-muted d-block mb-3">Item: <?= htmlspecialchars($activeTask['item_name']) ?></small>
+                        <a href="index.php?route=time_tracker" class="btn btn-sm btn-primary fw-bold px-3">
+                            <i class="fa-solid fa-clock me-1"></i> Manage Running Task in Dashboard
+                        </a>
                     </div>
-                    <div class="col-md-6">
-                        <select name="item_id" class="form-select form-select-sm" required>
-                            <option value="">Select Category / Project...</option>
-                            <?php foreach ($items as $item): ?>
-                                <option value="<?= $item['id'] ?>">[<?= ucfirst($item['category']) ?>] <?= htmlspecialchars($item['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <input type="number" step="0.25" min="0.1" name="hours" class="form-control form-control-sm" placeholder="Hours" required>
-                    </div>
-                    <div class="col-md-3">
-                        <input type="datetime-local" name="entry_datetime" class="form-control form-control-sm" value="<?= date('Y-m-d\TH:i') ?>" required>
-                    </div>
-                    <div class="col-md-12 text-end mt-2">
-                        <button type="submit" class="btn btn-sm btn-primary w-100">
-                            <i class="fa-solid fa-plus me-1"></i> Log Task
-                        </button>
-                    </div>
-                </form>
+                <?php else: ?>
+                    <form action="index.php?route=time_tracker" method="POST" class="row g-2">
+                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                        <input type="hidden" name="action" value="quick_add_task">
+                        <div class="col-md-12">
+                            <input type="text" name="task_name" class="form-control form-control-sm" placeholder="What are you working on?" required>
+                        </div>
+                        <div class="col-md-6">
+                            <select name="item_id" class="form-select form-select-sm" required>
+                                <option value="">Select Category / Project...</option>
+                                <?php foreach ($items as $item): ?>
+                                    <option value="<?= $item['id'] ?>">[<?= ucfirst($item['category']) ?>] <?= htmlspecialchars($item['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="number" step="0.25" min="0.1" name="hours" class="form-control form-control-sm" placeholder="Hours" required>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="datetime-local" name="entry_datetime" class="form-control form-control-sm" value="<?= date('Y-m-d\TH:i') ?>" required>
+                        </div>
+                        <div class="col-md-12 text-end mt-2">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                <i class="fa-solid fa-plus me-1"></i> Log Task
+                            </button>
+                        </div>
+                    </form>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -648,12 +663,12 @@ add_action('index_dashboard_widgets', function($userContext) {
                                             <i class="fa-solid fa-hand-pointer me-1"></i> Take Ownership
                                         </button>
                                     </form>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" data-bs-toggle="modal" data-bs-target="#completeModal_<?= $pr['id'] ?>">
+                                        Complete & Log
+                                    </button>
                                 <?php else: ?>
                                     <span class="badge bg-warning text-dark"><i class="fa-solid fa-spinner fa-spin me-1"></i> Working On It</span>
                                 <?php endif; ?>
-                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" data-bs-toggle="modal" data-bs-target="#completeModal_<?= $pr['id'] ?>">
-                                    Complete & Log
-                                </button>
                             </div>
                         </li>
 
