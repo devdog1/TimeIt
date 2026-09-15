@@ -225,7 +225,7 @@ $recurringTasks = $selectedTeamId > 0 ? TimeTrackerModel::getRecurringTasksForTe
                         </div>
 
                         <div class="row g-2 mb-2">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label small fw-bold">Recurrence Schedule</label>
                                 <select id="rt_frequency_select" name="frequency" class="form-select form-select-sm" onchange="toggleScheduleOptions(this.value);" required>
                                     <option value="daily">Daily Check</option>
@@ -237,10 +237,16 @@ $recurringTasks = $selectedTeamId > 0 ? TimeTrackerModel::getRecurringTasksForTe
                                 </select>
                             </div>
 
-                            <div class="col-md-6">
-                                <label class="form-label small fw-bold">Allocated Time Given (Hrs)</label>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Allocated Time (Hrs)</label>
                                 <input type="number" step="0.25" min="0.1" name="allocated_hours" class="form-control form-control-sm" placeholder="e.g. 1.5">
-                                <div class="form-text small">Time allocated for completion.</div>
+                                <div class="form-text small">Time allocated.</div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Hours Until Due</label>
+                                <input type="number" step="0.5" min="0.5" name="due_hours_after_creation" class="form-control form-control-sm" placeholder="e.g. 24">
+                                <div class="form-text small">Due window after creation.</div>
                             </div>
                         </div>
 
@@ -313,12 +319,13 @@ $recurringTasks = $selectedTeamId > 0 ? TimeTrackerModel::getRecurringTasksForTe
                                     <th>Category Item</th>
                                     <th>Frequency & Config</th>
                                     <th>Allocated Time</th>
+                                    <th>Due Window</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($recurringTasks)): ?>
-                                    <tr><td colspan="5" class="text-center py-4 text-muted">No recurring critical tasks scheduled for this team.</td></tr>
+                                    <tr><td colspan="6" class="text-center py-4 text-muted">No recurring critical tasks scheduled for this team.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($recurringTasks as $rt): ?>
                                         <tr>
@@ -337,6 +344,9 @@ $recurringTasks = $selectedTeamId > 0 ? TimeTrackerModel::getRecurringTasksForTe
                                             </td>
                                             <td class="fw-bold text-success">
                                                 <?= !empty($rt['allocated_hours']) ? number_format($rt['allocated_hours'], 2) . ' hrs' : '&mdash;' ?>
+                                            </td>
+                                            <td>
+                                                <?= !empty($rt['due_hours_after_creation']) ? '<span class="badge bg-warning text-dark"><i class="fa-solid fa-clock me-1"></i>' . number_format($rt['due_hours_after_creation'], 1) . ' hrs</span>' : '<span class="text-muted">End of Day</span>' ?>
                                             </td>
                                             <td class="text-end">
                                                 <form action="index.php?route=time_tracker_teams&team_id=<?= $selectedTeamId ?>" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this recurring task schedule?');">

@@ -806,8 +806,9 @@ function time_tracker_handle_posts() {
             $setDays = isset($_POST['set_days']) && is_array($_POST['set_days']) ? implode(',', $_POST['set_days']) : ($_POST['set_days'] ?? '');
             $allocatedHours = $_POST['allocated_hours'] !== '' ? $_POST['allocated_hours'] : null;
             $scheduleConfig = $_POST['schedule_config'] ?? '';
+            $dueHoursAfterCreation = $_POST['due_hours_after_creation'] !== '' ? $_POST['due_hours_after_creation'] : null;
 
-            TimeTrackerModel::saveRecurringTask($rtId, $teamId, $itemId, $taskName, $frequency, $description, $setDays, $allocatedHours, $scheduleConfig);
+            TimeTrackerModel::saveRecurringTask($rtId, $teamId, $itemId, $taskName, $frequency, $description, $setDays, $allocatedHours, $scheduleConfig, $dueHoursAfterCreation);
             $_SESSION['tt_success'] = ($rtId > 0) ? "Recurring task updated successfully!" : "New recurring task created and scheduled!";
         }
         elseif ($action === 'delete_recurring_task') {

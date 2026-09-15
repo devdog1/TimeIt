@@ -97,6 +97,7 @@ class TimeTrackerModel {
             frequency ENUM('daily', 'weekly', 'set_days', 'monthly', 'quarterly', 'yearly') NOT NULL DEFAULT 'daily',
             set_days VARCHAR(64) NULL,
             allocated_hours DECIMAL(6,2) NULL,
+            due_hours_after_creation DECIMAL(6,2) NULL,
             schedule_config VARCHAR(255) NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -110,6 +111,7 @@ class TimeTrackerModel {
             recurring_task_id INT NOT NULL,
             team_id INT NOT NULL,
             due_date DATE NOT NULL,
+            due_datetime DATETIME NULL,
             status ENUM('pending', 'completed') NOT NULL DEFAULT 'pending',
             completed_by_user_id INT NULL,
             completed_task_id INT NULL,
@@ -346,7 +348,7 @@ class TimeTrackerModel {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public static function saveRecurringTask($id, $teamId, $itemId, $taskName, $frequency, $description = '', $setDays = '', $allocatedHours = null, $scheduleConfig = '') {
+    public static function saveRecurringTask($id, $teamId, $itemId, $taskName, $frequency, $description = '', $setDays = '', $allocatedHours = null, $scheduleConfig = '', $dueHoursAfterCreation = null) {
         $pdb = self::getPdb();
         $tbRt = $pdb->getTableName('recurring_tasks');
 
@@ -366,17 +368,18 @@ class TimeTrackerModel {
         }
 
         $allocHours = ($allocatedHours !== null && $allocatedHours !== '') ? (float)$allocatedHours : null;
+        $dueHours = ($dueHoursAfterCreation !== null && $dueHoursAfterCreation !== '') ? (float)$dueHoursAfterCreation : null;
 
         if ($id > 0) {
             $pdb->query(
-                "UPDATE {$tbRt} SET team_id = ?, item_id = ?, task_name = ?, description = ?, frequency = ?, set_days = ?, allocated_hours = ?, schedule_config = ? WHERE id = ?",
-                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), $allocHours, trim($scheduleConfig), (int)$id]
+                "UPDATE {$tbRt} SET team_id = ?, item_id = ?, task_name = ?, description = ?, frequency = ?, set_days = ?, allocated_hours = ?, due_hours_after_creation = ?, schedule_config = ? WHERE id = ?",
+                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), $allocHours, $dueHours, trim($scheduleConfig), (int)$id]
             );
             $rtId = $id;
         } else {
             $pdb->query(
-                "INSERT INTO {$tbRt} (team_id, item_id, task_name, description, frequency, set_days, allocated_hours, schedule_config, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), $allocHours, trim($scheduleConfig)]
+                "INSERT INTO {$tbRt} (team_id, item_id, task_name, description, frequency, set_days, allocated_hours, due_hours_after_creation, schedule_config, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), $allocHours, $dueHours, trim($scheduleConfig)]
             );
             $rtId = get_db_connection()->lastInsertId();
         }
@@ -480,40 +483,69 @@ class TimeTrackerModel {
             }
 
             if (self::isDateMatchingSchedule($today, $rt['frequency'], $rt['set_days'], $rt['schedule_config'] ?? '')) {
+                $dueDatetime = null;
+                if (!empty($rt['due_hours_after_creation']) && (float)$rt['due_hours_after_creation'] > 0) {
+                    $hoursSeconds = (int)round((float)$rt['due_hours_after_creation'] * 3600);
+                    $dueDatetime = date('Y-m-d H:i:s', time() + $hoursSeconds);
+                } else {
+                    $dueDatetime = $today . ' 23:59:59';
+                }
+
                 $pdb->query(
-                    "INSERT INTO {$tbInst} (recurring_task_id, team_id, due_date, status) VALUES (?, ?, ?, 'pending')",
-                    [$rt['id'], $rt['team_id'], $today]
+                    "INSERT INTO {$tbInst} (recurring_task_id, team_id, due_date, due_datetime, status) VALUES (?, ?, ?, ?, 'pending')",
+                    [$rt['id'], $rt['team_id'], $today, $dueDatetime]
                 );
             }
         }
     }
 
-    public static function getRecurringInstanceDueStatus($dueDateStr) {
-        $todayTs = strtotime(date('Y-m-d'));
-        $dueTs = strtotime($dueDateStr);
-        $diffDays = (int)round(($todayTs - $dueTs) / 86400);
+    public static function getRecurringInstanceDueStatus($dueDateStr, $dueDatetimeStr = null) {
+        $nowTs = time();
+        if (!empty($dueDatetimeStr) && $dueDatetimeStr !== '0000-00-00 00:00:00') {
+            $dueTs = strtotime($dueDatetimeStr);
+        } else {
+            $dueTs = strtotime($dueDateStr . ' 23:59:59');
+        }
 
-        if ($diffDays > 0) {
+        $diffSeconds = $dueTs - $nowTs;
+
+        if ($diffSeconds < 0) {
+            $pastSeconds = abs($diffSeconds);
+            if ($pastSeconds < 3600) {
+                $mins = max(1, (int)round($pastSeconds / 60));
+                $label = "PAST DUE by {$mins} min" . ($mins === 1 ? '' : 's');
+            } elseif ($pastSeconds < 86400) {
+                $hrs = (int)round($pastSeconds / 3600);
+                $label = "PAST DUE by {$hrs} hr" . ($hrs === 1 ? '' : 's');
+            } else {
+                $days = (int)round($pastSeconds / 86400);
+                $label = "PAST DUE by {$days} day" . ($days === 1 ? '' : 's');
+            }
             return [
                 'is_past_due' => true,
-                'days_diff' => $diffDays,
-                'label' => "PAST DUE by {$diffDays} " . ($diffDays === 1 ? 'day' : 'days'),
+                'diff_seconds' => $diffSeconds,
+                'label' => $label,
                 'badge_class' => 'bg-danger text-white fw-bold'
             ];
-        } elseif ($diffDays === 0) {
-            return [
-                'is_past_due' => false,
-                'days_diff' => 0,
-                'label' => 'DUE TODAY',
-                'badge_class' => 'bg-warning text-dark fw-bold'
-            ];
         } else {
-            $absDays = abs($diffDays);
+            if ($diffSeconds < 3600) {
+                $mins = max(1, (int)round($diffSeconds / 60));
+                $label = "Due in {$mins} min" . ($mins === 1 ? '' : 's');
+                $badgeClass = 'bg-warning text-dark fw-bold';
+            } elseif ($diffSeconds < 86400) {
+                $hrs = (int)round($diffSeconds / 3600);
+                $label = "Due in {$hrs} hr" . ($hrs === 1 ? '' : 's');
+                $badgeClass = 'bg-warning text-dark fw-bold';
+            } else {
+                $days = (int)round($diffSeconds / 86400);
+                $label = "Due in {$days} day" . ($days === 1 ? '' : 's');
+                $badgeClass = 'bg-info text-dark fw-bold';
+            }
             return [
                 'is_past_due' => false,
-                'days_diff' => $diffDays,
-                'label' => "Due in {$absDays} " . ($absDays === 1 ? 'day' : 'days'),
-                'badge_class' => 'bg-info text-dark fw-bold'
+                'diff_seconds' => $diffSeconds,
+                'label' => $label,
+                'badge_class' => $badgeClass
             ];
         }
     }
@@ -527,7 +559,7 @@ class TimeTrackerModel {
         $tbItems = $pdb->getTableName('items');
         $tbMembers = $pdb->getTableName('team_members');
 
-        $sql = "SELECT ri.*, rt.task_name, rt.description as task_desc, rt.frequency, rt.item_id, rt.allocated_hours, rt.schedule_config,
+        $sql = "SELECT ri.*, rt.task_name, rt.description as task_desc, rt.frequency, rt.item_id, rt.allocated_hours, rt.due_hours_after_creation, rt.schedule_config,
                        i.name as item_name, i.category as item_category, tm.team_id
                 FROM {$tbInst} ri
                 INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id
@@ -540,7 +572,7 @@ class TimeTrackerModel {
         $instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($instances as &$inst) {
-            $inst['due_status'] = self::getRecurringInstanceDueStatus($inst['due_date']);
+            $inst['due_status'] = self::getRecurringInstanceDueStatus($inst['due_date'], $inst['due_datetime'] ?? null);
         }
 
         return $instances;
@@ -649,7 +681,7 @@ class TimeTrackerModel {
         $instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($instances as &$inst) {
-            $inst['due_status'] = self::getRecurringInstanceDueStatus($inst['due_date']);
+            $inst['due_status'] = self::getRecurringInstanceDueStatus($inst['due_date'], $inst['due_datetime'] ?? null);
             $inst['assigned_user_name'] = $inst['completed_by_user_id'] ? self::getUserName($inst['completed_by_user_id']) : null;
         }
 
