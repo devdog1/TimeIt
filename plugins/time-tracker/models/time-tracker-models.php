@@ -429,16 +429,49 @@ class TimeTrackerModel {
         $today = date('Y-m-d');
 
         foreach ($recurringTasks as $rt) {
-            if (self::isDateMatchingSchedule($today, $rt['frequency'], $rt['set_days'])) {
-                // Check if instance already generated for today
-                $checkStmt = $pdb->query("SELECT id FROM {$tbInst} WHERE recurring_task_id = ? AND due_date = ?", [$rt['id'], $today]);
-                if (!$checkStmt->fetch()) {
-                    $pdb->query(
-                        "INSERT INTO {$tbInst} (recurring_task_id, team_id, due_date, status) VALUES (?, ?, ?, 'pending')",
-                        [$rt['id'], $rt['team_id'], $today]
-                    );
-                }
+            // Check if there is ALREADY an uncompleted pending instance for this recurring task
+            $pendingStmt = $pdb->query("SELECT id FROM {$tbInst} WHERE recurring_task_id = ? AND status = 'pending'", [$rt['id']]);
+            if ($pendingStmt->fetch()) {
+                // Do not recreate/generate a new instance if the previous unfinished one is still incomplete
+                continue;
             }
+
+            if (self::isDateMatchingSchedule($today, $rt['frequency'], $rt['set_days'])) {
+                $pdb->query(
+                    "INSERT INTO {$tbInst} (recurring_task_id, team_id, due_date, status) VALUES (?, ?, ?, 'pending')",
+                    [$rt['id'], $rt['team_id'], $today]
+                );
+            }
+        }
+    }
+
+    public static function getRecurringInstanceDueStatus($dueDateStr) {
+        $todayTs = strtotime(date('Y-m-d'));
+        $dueTs = strtotime($dueDateStr);
+        $diffDays = (int)round(($todayTs - $dueTs) / 86400);
+
+        if ($diffDays > 0) {
+            return [
+                'is_past_due' => true,
+                'days_diff' => $diffDays,
+                'label' => "PAST DUE by {$diffDays} " . ($diffDays === 1 ? 'day' : 'days'),
+                'badge_class' => 'bg-danger text-white fw-bold'
+            ];
+        } elseif ($diffDays === 0) {
+            return [
+                'is_past_due' => false,
+                'days_diff' => 0,
+                'label' => 'DUE TODAY',
+                'badge_class' => 'bg-warning text-dark fw-bold'
+            ];
+        } else {
+            $absDays = abs($diffDays);
+            return [
+                'is_past_due' => false,
+                'days_diff' => $diffDays,
+                'label' => "Due in {$absDays} " . ($absDays === 1 ? 'day' : 'days'),
+                'badge_class' => 'bg-info text-dark fw-bold'
+            ];
         }
     }
 
@@ -461,7 +494,13 @@ class TimeTrackerModel {
                 ORDER BY ri.due_date ASC, rt.task_name ASC";
 
         $stmt = $pdb->query($sql, [$userId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($instances as &$inst) {
+            $inst['due_status'] = self::getRecurringInstanceDueStatus($inst['due_date']);
+        }
+
+        return $instances;
     }
 
     public static function completeRecurringInstance($instanceId, $userId, $hoursSpent, $notes = '', $entryDatetime = null) {

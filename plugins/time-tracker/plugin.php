@@ -430,13 +430,16 @@ add_action('index_dashboard_widgets', function($userContext) {
             </div>
             <div class="card-body p-0">
                 <ul class="list-group list-group-flush small">
-                    <?php foreach ($pendingRecurring as $pr): ?>
+                    <?php foreach ($pendingRecurring as $pr):
+                        $dueStatus = $pr['due_status'] ?? TimeTrackerModel::getRecurringInstanceDueStatus($pr['due_date']);
+                    ?>
                         <li class="list-group-item d-flex justify-content-between align-items-center py-2">
                             <div>
                                 <strong class="text-dark d-block"><?= htmlspecialchars($pr['task_name']) ?></strong>
                                 <small class="text-muted">Item: <?= htmlspecialchars($pr['item_name']) ?> &bull; Due: <?= date('M d, Y', strtotime($pr['due_date'])) ?></small>
                             </div>
-                            <div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge <?= $dueStatus['badge_class'] ?>"><?= htmlspecialchars($dueStatus['label']) ?></span>
                                 <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" data-bs-toggle="modal" data-bs-target="#completeModal_<?= $pr['id'] ?>">
                                     Complete & Log
                                 </button>
