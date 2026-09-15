@@ -96,6 +96,8 @@ class TimeTrackerModel {
             description TEXT NULL,
             frequency ENUM('daily', 'weekly', 'set_days', 'monthly', 'quarterly', 'yearly') NOT NULL DEFAULT 'daily',
             set_days VARCHAR(64) NULL,
+            allocated_hours DECIMAL(6,2) NULL,
+            schedule_config VARCHAR(255) NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY idx_team_id (team_id),
@@ -344,7 +346,7 @@ class TimeTrackerModel {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public static function saveRecurringTask($id, $teamId, $itemId, $taskName, $frequency, $description = '', $setDays = '') {
+    public static function saveRecurringTask($id, $teamId, $itemId, $taskName, $frequency, $description = '', $setDays = '', $allocatedHours = null, $scheduleConfig = '') {
         $pdb = self::getPdb();
         $tbRt = $pdb->getTableName('recurring_tasks');
 
@@ -363,16 +365,18 @@ class TimeTrackerModel {
             throw new Exception("Invalid recurrence frequency specified.");
         }
 
+        $allocHours = ($allocatedHours !== null && $allocatedHours !== '') ? (float)$allocatedHours : null;
+
         if ($id > 0) {
             $pdb->query(
-                "UPDATE {$tbRt} SET team_id = ?, item_id = ?, task_name = ?, description = ?, frequency = ?, set_days = ? WHERE id = ?",
-                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), (int)$id]
+                "UPDATE {$tbRt} SET team_id = ?, item_id = ?, task_name = ?, description = ?, frequency = ?, set_days = ?, allocated_hours = ?, schedule_config = ? WHERE id = ?",
+                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), $allocHours, trim($scheduleConfig), (int)$id]
             );
             $rtId = $id;
         } else {
             $pdb->query(
-                "INSERT INTO {$tbRt} (team_id, item_id, task_name, description, frequency, set_days, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)",
-                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays)]
+                "INSERT INTO {$tbRt} (team_id, item_id, task_name, description, frequency, set_days, allocated_hours, schedule_config, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), $allocHours, trim($scheduleConfig)]
             );
             $rtId = get_db_connection()->lastInsertId();
         }
@@ -392,7 +396,7 @@ class TimeTrackerModel {
         return true;
     }
 
-    public static function isDateMatchingSchedule($dateYmd, $frequency, $setDays = '') {
+    public static function isDateMatchingSchedule($dateYmd, $frequency, $setDays = '', $scheduleConfig = '') {
         $ts = strtotime($dateYmd);
         $dayOfWeek = date('N', $ts); // 1 (Mon) - 7 (Sun)
         $dayOfMonth = (int)date('j', $ts);
@@ -401,18 +405,52 @@ class TimeTrackerModel {
         switch ($frequency) {
             case 'daily':
                 return true;
+
             case 'weekly':
-                return $dayOfWeek == 1; // Default Monday
+                // Check if specific day of week configured in set_days or schedule_config (e.g., '1'=Mon, '2'=Tue, '3'=Wed)
+                $targetDay = !empty($setDays) ? (int)$setDays : (!empty($scheduleConfig) ? (int)$scheduleConfig : 1);
+                return $dayOfWeek == $targetDay;
+
             case 'set_days':
                 if (empty($setDays)) return $dayOfWeek == 1;
                 $allowed = array_map('trim', explode(',', $setDays));
                 return in_array($dayOfWeek, $allowed) || in_array(date('D', $ts), $allowed);
+
             case 'monthly':
+                // Check mode: day_of_month (e.g., 15) vs relative_day (e.g. "3_tuesday" = 3rd Tuesday)
+                if (!empty($scheduleConfig)) {
+                    if (strpos($scheduleConfig, 'day_') === 0) {
+                        $targetDayNum = (int)str_replace('day_', '', $scheduleConfig);
+                        return $dayOfMonth == $targetDayNum;
+                    } elseif (strpos($scheduleConfig, 'nth_') === 0) {
+                        // Format: nth_3_2 (3rd Tuesday: nth_3_dayNum where 2=Tue)
+                        $parts = explode('_', $scheduleConfig);
+                        if (count($parts) >= 3) {
+                            $nth = (int)$parts[1]; // e.g., 1, 2, 3, 4
+                            $targetDow = (int)$parts[2]; // e.g., 1=Mon, 2=Tue, 3=Wed, etc.
+
+                            if ($dayOfWeek != $targetDow) return false;
+
+                            $calculatedNth = (int)ceil($dayOfMonth / 7);
+                            return $calculatedNth == $nth;
+                        }
+                    }
+                }
+                // Default: 1st of the month
                 return $dayOfMonth == 1;
+
             case 'quarterly':
-                return $dayOfMonth == 1 && in_array($month, [1, 4, 7, 10]);
+                $targetDayNum = !empty($scheduleConfig) ? (int)$scheduleConfig : 1;
+                return $dayOfMonth == $targetDayNum && in_array($month, [1, 4, 7, 10]);
+
             case 'yearly':
+                if (!empty($scheduleConfig) && strpos($scheduleConfig, '-') !== false) {
+                    // Format: MM-DD (e.g., 09-01 for Sept 1st)
+                    $targetMmDd = date('m-d', strtotime("2026-" . $scheduleConfig));
+                    return date('m-d', $ts) === $targetMmDd;
+                }
                 return $dayOfMonth == 1 && $month == 1;
+
             default:
                 return false;
         }
@@ -441,7 +479,7 @@ class TimeTrackerModel {
                 continue;
             }
 
-            if (self::isDateMatchingSchedule($today, $rt['frequency'], $rt['set_days'])) {
+            if (self::isDateMatchingSchedule($today, $rt['frequency'], $rt['set_days'], $rt['schedule_config'] ?? '')) {
                 $pdb->query(
                     "INSERT INTO {$tbInst} (recurring_task_id, team_id, due_date, status) VALUES (?, ?, ?, 'pending')",
                     [$rt['id'], $rt['team_id'], $today]
@@ -489,7 +527,7 @@ class TimeTrackerModel {
         $tbItems = $pdb->getTableName('items');
         $tbMembers = $pdb->getTableName('team_members');
 
-        $sql = "SELECT ri.*, rt.task_name, rt.description as task_desc, rt.frequency, rt.item_id,
+        $sql = "SELECT ri.*, rt.task_name, rt.description as task_desc, rt.frequency, rt.item_id, rt.allocated_hours, rt.schedule_config,
                        i.name as item_name, i.category as item_category, tm.team_id
                 FROM {$tbInst} ri
                 INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id

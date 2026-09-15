@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_recurring_tasks (
     description TEXT NULL,
     frequency ENUM('daily', 'weekly', 'set_days', 'monthly', 'quarterly', 'yearly') NOT NULL DEFAULT 'daily',
     set_days VARCHAR(64) NULL,
+    allocated_hours DECIMAL(6,2) NULL,
+    schedule_config VARCHAR(255) NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_team_id (team_id),

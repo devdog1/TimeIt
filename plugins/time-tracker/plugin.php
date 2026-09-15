@@ -625,7 +625,10 @@ add_action('index_dashboard_widgets', function($userContext) {
 
                                             <div class="mb-3">
                                                 <label class="form-label small fw-bold">Hours Spent</label>
-                                                <input type="number" step="0.25" min="0.1" name="hours_spent" class="form-control form-control-sm" placeholder="e.g. 1.5" required>
+                                                <input type="number" step="0.25" min="0.1" name="hours_spent" class="form-control form-control-sm" placeholder="e.g. 1.5" value="<?= htmlspecialchars($pr['allocated_hours'] ?? '') ?>" required>
+                                                <?php if (!empty($pr['allocated_hours'])): ?>
+                                                    <div class="form-text small">Pre-filled with manager allocated time (<?= number_format($pr['allocated_hours'], 2) ?> hrs). You may adjust if needed.</div>
+                                                <?php endif; ?>
                                             </div>
 
                                             <div class="mb-2">
@@ -801,8 +804,10 @@ function time_tracker_handle_posts() {
             $frequency = $_POST['frequency'] ?? 'daily';
             $description = $_POST['description'] ?? '';
             $setDays = isset($_POST['set_days']) && is_array($_POST['set_days']) ? implode(',', $_POST['set_days']) : ($_POST['set_days'] ?? '');
+            $allocatedHours = $_POST['allocated_hours'] !== '' ? $_POST['allocated_hours'] : null;
+            $scheduleConfig = $_POST['schedule_config'] ?? '';
 
-            TimeTrackerModel::saveRecurringTask($rtId, $teamId, $itemId, $taskName, $frequency, $description, $setDays);
+            TimeTrackerModel::saveRecurringTask($rtId, $teamId, $itemId, $taskName, $frequency, $description, $setDays, $allocatedHours, $scheduleConfig);
             $_SESSION['tt_success'] = ($rtId > 0) ? "Recurring task updated successfully!" : "New recurring task created and scheduled!";
         }
         elseif ($action === 'delete_recurring_task') {
