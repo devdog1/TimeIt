@@ -284,6 +284,11 @@ if (isset($_GET['supervisor_edit_task'])) {
                 <i class="fa-solid fa-list-check me-1"></i> Detailed Tasks Audit View
             </a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link <?= $activeTab === 'recurring_history' ? 'active fw-bold' : '' ?>" href="index.php?route=time_tracker_supervisor&tab=recurring_history&start_date=<?= $startDate ?>&end_date=<?= $endDate ?>&team_id=<?= $filterTeamId ?>">
+                <i class="fa-solid fa-clock-rotate-left me-1"></i> Recurring Task History
+            </a>
+        </li>
     </ul>
 
     <!-- Tab 1: User Summary View -->
@@ -484,3 +489,63 @@ if (isset($_GET['supervisor_edit_task'])) {
         </div>
     <?php endif; ?>
 </div>
+
+    <!-- Tab 5: Recurring Task History Panel -->
+    <?php if ($activeTab === 'recurring_history'):
+        $recurringHistory = TimeTrackerModel::getRecurringTasksHistory($filterTeamId, $startDate, $endDate);
+    ?>
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-light py-3 d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-rotate me-2"></i> Team Recurring Task Schedule History</h6>
+                <span class="badge bg-primary fs-6"><?= count($recurringHistory) ?> Instances Evaluated</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Due Date</th>
+                                <th>Team</th>
+                                <th>Recurring Task Name</th>
+                                <th>Category Item</th>
+                                <th>Frequency</th>
+                                <th>Status / Due Window</th>
+                                <th>Assigned / Completed By</th>
+                                <th>Completion Date/Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($recurringHistory)): ?>
+                                <tr><td colspan="8" class="text-center py-4 text-muted">No recurring task history entries matching current date/team filters.</td></tr>
+                            <?php else: ?>
+                                <?php foreach ($recurringHistory as $rh):
+                                    $ds = $rh['due_status'];
+                                ?>
+                                    <tr>
+                                        <td class="fw-bold"><?= date('M d, Y', strtotime($rh['due_date'])) ?></td>
+                                        <td><span class="badge bg-secondary"><?= htmlspecialchars($rh['team_name']) ?></span></td>
+                                        <td>
+                                            <strong class="text-dark d-block"><?= htmlspecialchars($rh['task_name']) ?></strong>
+                                        </td>
+                                        <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($rh['item_name']) ?></span></td>
+                                        <td class="text-capitalize"><?= htmlspecialchars($rh['frequency']) ?></td>
+                                        <td>
+                                            <?php if ($rh['status'] === 'completed'): ?>
+                                                <span class="badge bg-success"><i class="fa-solid fa-check me-1"></i> Completed</span>
+                                            <?php else: ?>
+                                                <span class="badge <?= $ds['badge_class'] ?>"><?= htmlspecialchars($ds['label']) ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="fw-bold"><?= htmlspecialchars($rh['completed_user_name']) ?></td>
+                                        <td>
+                                            <?= $rh['completed_at'] ? date('M d, Y H:i', strtotime($rh['completed_at'])) : '<span class="text-muted">&mdash;</span>' ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>

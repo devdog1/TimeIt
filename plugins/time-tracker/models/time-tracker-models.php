@@ -234,12 +234,7 @@ class TimeTrackerModel {
                 [$elapsedHours, $now, $taskId]
             );
 
-            // Also mark linked recurring task instance as completed
-            $tbInst = $pdb->getTableName('recurring_instances');
-            $pdb->query(
-                "UPDATE {$tbInst} SET status = 'completed', completed_at = ? WHERE completed_task_id = ? AND status = 'pending'",
-                [$now, $taskId]
-            );
+            self::syncRecurringInstanceCompletion($taskId, $task['user_id'], $now);
 
             return 'finished';
         } else { // 'still_working'
@@ -1114,11 +1109,7 @@ class TimeTrackerModel {
             );
 
             if ($status === 'completed') {
-                $tbInst = $pdb->getTableName('recurring_instances');
-                $pdb->query(
-                    "UPDATE {$tbInst} SET status = 'completed', completed_at = ? WHERE completed_task_id = ? AND status = 'pending'",
-                    [date('Y-m-d H:i:s'), $taskId]
-                );
+                self::syncRecurringInstanceCompletion($taskId, $userId);
             }
 
             return $taskId;
@@ -1228,4 +1219,81 @@ class TimeTrackerModel {
 
         return self::getTasks($userId, $startDate, $endDate);
     }
+
+    public static function syncRecurringInstanceCompletion($taskId, $userId, $now = null) {
+        if (!$now) $now = date('Y-m-d H:i:s');
+        $pdb = self::getPdb();
+        $tbInst = $pdb->getTableName('recurring_instances');
+        $tbRt = $pdb->getTableName('recurring_tasks');
+
+        // 1. Primary match: by completed_task_id
+        $pdb->query(
+            "UPDATE {$tbInst} SET status = 'completed', completed_by_user_id = COALESCE(completed_by_user_id, ?), completed_at = ? WHERE completed_task_id = ?",
+            [(int)$userId, $now, (int)$taskId]
+        );
+
+        // 2. Secondary match: if task timer was started standardly without claiming first, match pending instance for user's team
+        $task = self::getTaskById($taskId);
+        if ($task) {
+            $userTeams = self::getTeamUserIds(null); // or search teams for user
+            $tbMembers = $pdb->getTableName('team_members');
+            $stmt = $pdb->query("SELECT team_id FROM {$tbMembers} WHERE user_id = ?", [(int)$userId]);
+            $userTeamIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+            if (!empty($userTeamIds)) {
+                $inTeams = implode(',', array_map('intval', $userTeamIds));
+                $sql = "UPDATE {$tbInst} ri
+                        INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id
+                        SET ri.status = 'completed', ri.completed_by_user_id = ?, ri.completed_task_id = ?, ri.completed_at = ?
+                        WHERE ri.status = 'pending' AND ri.team_id IN ({$inTeams}) AND rt.item_id = ? AND LOWER(TRIM(rt.task_name)) = LOWER(TRIM(?))";
+                $pdb->query($sql, [(int)$userId, (int)$taskId, $now, (int)$task['item_id'], $task['task_name']]);
+            }
+        }
+    }
+
+    public static function getRecurringTasksHistory($teamId = null, $startDate = null, $endDate = null) {
+        $pdb = self::getPdb();
+        $tbInst = $pdb->getTableName('recurring_instances');
+        $tbRt = $pdb->getTableName('recurring_tasks');
+        $tbItems = $pdb->getTableName('items');
+        $tbTeams = $pdb->getTableName('teams');
+
+        $where = [];
+        $params = [];
+
+        if ($teamId) {
+            $where[] = "ri.team_id = ?";
+            $params[] = $teamId;
+        }
+        if ($startDate) {
+            $where[] = "ri.due_date >= ?";
+            $params[] = date('Y-m-d', strtotime($startDate));
+        }
+        if ($endDate) {
+            $where[] = "ri.due_date <= ?";
+            $params[] = date('Y-m-d', strtotime($endDate));
+        }
+
+        $whereSql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
+
+        $sql = "SELECT ri.*, rt.task_name, rt.frequency, rt.allocated_hours, rt.due_hours_after_creation,
+                       i.name as item_name, i.category as item_category, tm.name as team_name
+                FROM {$tbInst} ri
+                INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id
+                INNER JOIN {$tbItems} i ON rt.item_id = i.id
+                INNER JOIN {$tbTeams} tm ON ri.team_id = tm.id
+                {$whereSql}
+                ORDER BY ri.due_date DESC, ri.id DESC";
+
+        $stmt = $pdb->query($sql, $params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as &$r) {
+            $r['due_status'] = self::getRecurringInstanceDueStatus($r['due_date'], $r['due_datetime'] ?? null);
+            $r['completed_user_name'] = $r['completed_by_user_id'] ? self::getUserName($r['completed_by_user_id']) : 'Unassigned';
+        }
+
+        return $rows;
+    }
+
 }
