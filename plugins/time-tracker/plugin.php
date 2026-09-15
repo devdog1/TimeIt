@@ -64,8 +64,21 @@ add_action('init_scheduler', function($scheduler) {
             900,
             'time-tracker'
         );
+
+        // Daily recurring critical task instance generator (3600 seconds)
+        $scheduler->registerTask(
+            'generate_recurring_tasks',
+            'time_tracker_generate_recurring_tasks',
+            3600,
+            'time-tracker'
+        );
     }
 });
+
+function time_tracker_generate_recurring_tasks() {
+    TimeTrackerModel::generatePendingRecurringInstances();
+    echo "[TimeTracker Recurring Generator] Evaluated recurring critical tasks.\n";
+}
 
 // 15-minute active task background check-in runner
 function time_tracker_check_active_tasks() {
@@ -402,6 +415,75 @@ add_action('index_dashboard_widgets', function($userContext) {
         </div>
     </div>
 
+    <!-- Pending Critical Team Recurring Tasks Dashboard Widget -->
+    <?php
+    $pendingRecurring = TimeTrackerModel::getPendingRecurringInstancesForUserTeams($userId);
+    if (!empty($pendingRecurring)):
+    ?>
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm border-start border-4 border-danger h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0 text-danger">
+                    <i class="fa-solid fa-triangle-exclamation me-1"></i> Pending Critical Team Tasks (<?= count($pendingRecurring) ?>)
+                </h6>
+                <span class="badge bg-danger">Action Required</span>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush small">
+                    <?php foreach ($pendingRecurring as $pr): ?>
+                        <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                            <div>
+                                <strong class="text-dark d-block"><?= htmlspecialchars($pr['task_name']) ?></strong>
+                                <small class="text-muted">Item: <?= htmlspecialchars($pr['item_name']) ?> &bull; Due: <?= date('M d, Y', strtotime($pr['due_date'])) ?></small>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" data-bs-toggle="modal" data-bs-target="#completeModal_<?= $pr['id'] ?>">
+                                    Complete & Log
+                                </button>
+                            </div>
+                        </li>
+
+                        <!-- Modal for completing recurring task -->
+                        <div class="modal fade" id="completeModal_<?= $pr['id'] ?>" tabindex="-1">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-danger text-white">
+                                        <h6 class="modal-title fw-bold"><i class="fa-solid fa-check-double me-1"></i> Complete Critical Task</h6>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form action="index.php?route=time_tracker" method="POST">
+                                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                        <input type="hidden" name="action" value="complete_recurring_instance">
+                                        <input type="hidden" name="instance_id" value="<?= $pr['id'] ?>">
+                                        <div class="modal-body text-start">
+                                            <p class="fw-bold mb-1"><?= htmlspecialchars($pr['task_name']) ?></p>
+                                            <p class="small text-muted mb-3"><?= htmlspecialchars($pr['task_desc']) ?></p>
+
+                                            <div class="mb-3">
+                                                <label class="form-label small fw-bold">Hours Spent</label>
+                                                <input type="number" step="0.25" min="0.1" name="hours_spent" class="form-control form-control-sm" placeholder="e.g. 1.5" required>
+                                            </div>
+
+                                            <div class="mb-2">
+                                                <label class="form-label small fw-bold">Completion Notes (Optional)</label>
+                                                <input type="text" name="notes" class="form-control form-control-sm" placeholder="Details about execution...">
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-danger btn-sm fw-bold">Complete & Log Time</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Project Lead Status Widget -->
     <?php if (!empty($leadProjects)): ?>
     <div class="col-md-6 mb-4">
@@ -542,6 +624,33 @@ function time_tracker_handle_posts() {
             $teamId = (int)($_POST['team_id'] ?? 0);
             TimeTrackerModel::deleteTeam($teamId);
             $_SESSION['tt_success'] = "Team deleted successfully.";
+        }
+        elseif ($action === 'save_recurring_task') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $rtId = (int)($_POST['recurring_task_id'] ?? 0);
+            $teamId = (int)($_POST['team_id'] ?? 0);
+            $itemId = (int)($_POST['item_id'] ?? 0);
+            $taskName = $_POST['task_name'] ?? '';
+            $frequency = $_POST['frequency'] ?? 'daily';
+            $description = $_POST['description'] ?? '';
+            $setDays = isset($_POST['set_days']) && is_array($_POST['set_days']) ? implode(',', $_POST['set_days']) : ($_POST['set_days'] ?? '');
+
+            TimeTrackerModel::saveRecurringTask($rtId, $teamId, $itemId, $taskName, $frequency, $description, $setDays);
+            $_SESSION['tt_success'] = ($rtId > 0) ? "Recurring task updated successfully!" : "New recurring task created and scheduled!";
+        }
+        elseif ($action === 'delete_recurring_task') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $rtId = (int)($_POST['recurring_task_id'] ?? 0);
+            TimeTrackerModel::deleteRecurringTask($rtId);
+            $_SESSION['tt_success'] = "Recurring task deleted successfully.";
+        }
+        elseif ($action === 'complete_recurring_instance') {
+            $instanceId = (int)($_POST['instance_id'] ?? 0);
+            $hoursSpent = (float)($_POST['hours_spent'] ?? 0);
+            $notes = $_POST['notes'] ?? '';
+
+            TimeTrackerModel::completeRecurringInstance($instanceId, $userId, $hoursSpent, $notes);
+            $_SESSION['tt_success'] = "Critical task marked completed and time logged successfully!";
         }
         elseif ($action === 'save_category') {
             if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");

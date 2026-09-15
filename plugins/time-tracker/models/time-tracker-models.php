@@ -88,6 +88,36 @@ class TimeTrackerModel {
             KEY idx_user_id (user_id)
         ");
 
+        $pdb->createTable('recurring_tasks', "
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            team_id INT NOT NULL,
+            item_id INT NOT NULL,
+            task_name VARCHAR(255) NOT NULL,
+            description TEXT NULL,
+            frequency ENUM('daily', 'weekly', 'set_days', 'monthly', 'quarterly', 'yearly') NOT NULL DEFAULT 'daily',
+            set_days VARCHAR(64) NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_team_id (team_id),
+            KEY idx_item_id (item_id),
+            KEY idx_frequency (frequency)
+        ");
+
+        $pdb->createTable('recurring_instances', "
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            recurring_task_id INT NOT NULL,
+            team_id INT NOT NULL,
+            due_date DATE NOT NULL,
+            status ENUM('pending', 'completed') NOT NULL DEFAULT 'pending',
+            completed_by_user_id INT NULL,
+            completed_task_id INT NULL,
+            completed_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_recurring_due (recurring_task_id, due_date),
+            KEY idx_team_due (team_id, due_date),
+            KEY idx_status (status)
+        ");
+
         $pdb->createTable('settings', "
             setting_key VARCHAR(64) PRIMARY KEY,
             setting_value TEXT NULL
@@ -295,6 +325,174 @@ class TimeTrackerModel {
             }
         } catch (Exception $e) {}
         return "User #" . $userId;
+    }
+
+    /* ================= RECURRING CRITICAL TASKS METHODS ================= */
+
+    public static function getRecurringTasksForTeam($teamId) {
+        $pdb = self::getPdb();
+        $tbRt = $pdb->getTableName('recurring_tasks');
+        $tbItems = $pdb->getTableName('items');
+
+        $sql = "SELECT rt.*, i.name as item_name, i.category as item_category
+                FROM {$tbRt} rt
+                LEFT JOIN {$tbItems} i ON rt.item_id = i.id
+                WHERE rt.team_id = ?
+                ORDER BY rt.task_name ASC";
+
+        $stmt = $pdb->query($sql, [$teamId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public static function saveRecurringTask($id, $teamId, $itemId, $taskName, $frequency, $description = '', $setDays = '') {
+        $pdb = self::getPdb();
+        $tbRt = $pdb->getTableName('recurring_tasks');
+
+        if (empty(trim($taskName))) {
+            throw new Exception("Recurring task name cannot be empty.");
+        }
+        if (!$teamId || (int)$teamId <= 0) {
+            throw new Exception("A valid team must be selected.");
+        }
+        if (!$itemId || (int)$itemId <= 0) {
+            throw new Exception("A valid project/category item must be selected.");
+        }
+
+        $validFreqs = ['daily', 'weekly', 'set_days', 'monthly', 'quarterly', 'yearly'];
+        if (!in_array($frequency, $validFreqs)) {
+            throw new Exception("Invalid recurrence frequency specified.");
+        }
+
+        if ($id > 0) {
+            $pdb->query(
+                "UPDATE {$tbRt} SET team_id = ?, item_id = ?, task_name = ?, description = ?, frequency = ?, set_days = ? WHERE id = ?",
+                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays), (int)$id]
+            );
+            $rtId = $id;
+        } else {
+            $pdb->query(
+                "INSERT INTO {$tbRt} (team_id, item_id, task_name, description, frequency, set_days, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)",
+                [(int)$teamId, (int)$itemId, trim($taskName), trim($description), $frequency, trim($setDays)]
+            );
+            $rtId = get_db_connection()->lastInsertId();
+        }
+
+        // Trigger immediate instance generation
+        self::generatePendingRecurringInstances();
+        return $rtId;
+    }
+
+    public static function deleteRecurringTask($id) {
+        $pdb = self::getPdb();
+        $tbRt = $pdb->getTableName('recurring_tasks');
+        $tbInst = $pdb->getTableName('recurring_instances');
+
+        $pdb->query("DELETE FROM {$tbInst} WHERE recurring_task_id = ? AND status = 'pending'", [$id]);
+        $pdb->query("DELETE FROM {$tbRt} WHERE id = ?", [$id]);
+        return true;
+    }
+
+    public static function isDateMatchingSchedule($dateYmd, $frequency, $setDays = '') {
+        $ts = strtotime($dateYmd);
+        $dayOfWeek = date('N', $ts); // 1 (Mon) - 7 (Sun)
+        $dayOfMonth = (int)date('j', $ts);
+        $month = (int)date('n', $ts);
+
+        switch ($frequency) {
+            case 'daily':
+                return true;
+            case 'weekly':
+                return $dayOfWeek == 1; // Default Monday
+            case 'set_days':
+                if (empty($setDays)) return $dayOfWeek == 1;
+                $allowed = array_map('trim', explode(',', $setDays));
+                return in_array($dayOfWeek, $allowed) || in_array(date('D', $ts), $allowed);
+            case 'monthly':
+                return $dayOfMonth == 1;
+            case 'quarterly':
+                return $dayOfMonth == 1 && in_array($month, [1, 4, 7, 10]);
+            case 'yearly':
+                return $dayOfMonth == 1 && $month == 1;
+            default:
+                return false;
+        }
+    }
+
+    public static function generatePendingRecurringInstances() {
+        $pdb = self::getPdb();
+        $tbRt = $pdb->getTableName('recurring_tasks');
+        $tbInst = $pdb->getTableName('recurring_instances');
+
+        $stmt = $pdb->query("SELECT * FROM {$tbRt} WHERE is_active = 1");
+        $recurringTasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $today = date('Y-m-d');
+
+        foreach ($recurringTasks as $rt) {
+            if (self::isDateMatchingSchedule($today, $rt['frequency'], $rt['set_days'])) {
+                // Check if instance already generated for today
+                $checkStmt = $pdb->query("SELECT id FROM {$tbInst} WHERE recurring_task_id = ? AND due_date = ?", [$rt['id'], $today]);
+                if (!$checkStmt->fetch()) {
+                    $pdb->query(
+                        "INSERT INTO {$tbInst} (recurring_task_id, team_id, due_date, status) VALUES (?, ?, ?, 'pending')",
+                        [$rt['id'], $rt['team_id'], $today]
+                    );
+                }
+            }
+        }
+    }
+
+    public static function getPendingRecurringInstancesForUserTeams($userId) {
+        self::generatePendingRecurringInstances();
+
+        $pdb = self::getPdb();
+        $tbInst = $pdb->getTableName('recurring_instances');
+        $tbRt = $pdb->getTableName('recurring_tasks');
+        $tbItems = $pdb->getTableName('items');
+        $tbMembers = $pdb->getTableName('team_members');
+
+        $sql = "SELECT ri.*, rt.task_name, rt.description as task_desc, rt.frequency, rt.item_id,
+                       i.name as item_name, i.category as item_category, tm.team_id
+                FROM {$tbInst} ri
+                INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id
+                INNER JOIN {$tbItems} i ON rt.item_id = i.id
+                INNER JOIN {$tbMembers} tm ON ri.team_id = tm.team_id
+                WHERE tm.user_id = ? AND ri.status = 'pending'
+                ORDER BY ri.due_date ASC, rt.task_name ASC";
+
+        $stmt = $pdb->query($sql, [$userId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public static function completeRecurringInstance($instanceId, $userId, $hoursSpent, $notes = '', $entryDatetime = null) {
+        $pdb = self::getPdb();
+        $tbInst = $pdb->getTableName('recurring_instances');
+        $tbRt = $pdb->getTableName('recurring_tasks');
+
+        $stmt = $pdb->query("SELECT ri.*, rt.task_name, rt.item_id FROM {$tbInst} ri INNER JOIN {$tbRt} rt ON ri.recurring_task_id = rt.id WHERE ri.id = ?", [$instanceId]);
+        $instance = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$instance) {
+            throw new Exception("Recurring task instance not found.");
+        }
+        if ($instance['status'] === 'completed') {
+            throw new Exception("This recurring task instance has already been completed.");
+        }
+
+        $dt = $entryDatetime ? date('Y-m-d H:i:s', strtotime($entryDatetime)) : date('Y-m-d H:i:s');
+        $taskName = $instance['task_name'] . (!empty($notes) ? " - " . trim($notes) : "");
+
+        // Create actual completed task entry in plug_time_tracker_tasks
+        $taskId = self::saveTask(0, $userId, $instance['item_id'], $taskName, $hoursSpent, $dt, 'completed');
+
+        // Mark recurring instance as completed
+        $now = date('Y-m-d H:i:s');
+        $pdb->query(
+            "UPDATE {$tbInst} SET status = 'completed', completed_by_user_id = ?, completed_task_id = ?, completed_at = ? WHERE id = ?",
+            [$userId, $taskId, $now, $instanceId]
+        );
+
+        return $taskId;
     }
 
     /* ================= TEAMS METHODS ================= */

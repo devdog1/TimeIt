@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS plug_time_tracker_recurring_instances;
+DROP TABLE IF EXISTS plug_time_tracker_recurring_tasks;
 DROP TABLE IF EXISTS plug_time_tracker_categories;
 DROP TABLE IF EXISTS plug_time_tracker_settings;
 DROP TABLE IF EXISTS plug_time_tracker_team_members;

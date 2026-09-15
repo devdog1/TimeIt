@@ -1,11 +1,15 @@
 <?php
 $teams = TimeTrackerModel::getTeams();
 $users = TimeTrackerModel::getAllUsers();
+$items = TimeTrackerModel::getItems(null, true);
 
 $editTeam = null;
 if (isset($_GET['edit_team'])) {
     $editTeam = TimeTrackerModel::getTeamById((int)$_GET['edit_team']);
 }
+
+$selectedTeamId = isset($_GET['team_id']) ? (int)$_GET['team_id'] : (!empty($teams) ? $teams[0]['id'] : 0);
+$recurringTasks = $selectedTeamId > 0 ? TimeTrackerModel::getRecurringTasksForTeam($selectedTeamId) : [];
 ?>
 
 <div class="container-fluid py-3">
@@ -13,7 +17,7 @@ if (isset($_GET['edit_team'])) {
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h3 class="fw-bold mb-1"><i class="fa-solid fa-users-gear text-primary me-2"></i> Teams & Team Supervisors</h3>
-            <p class="text-muted small mb-0">Organize users into teams, assign dedicated team supervisors, and track team activities.</p>
+            <p class="text-muted small mb-0">Organize users into teams, assign team supervisors, and configure recurring critical team tasks.</p>
         </div>
         <div>
             <a href="index.php?route=time_tracker_supervisor" class="btn btn-outline-secondary btn-sm">
@@ -36,7 +40,7 @@ if (isset($_GET['edit_team'])) {
         </div>
     <?php endif; ?>
 
-    <div class="row g-4">
+    <div class="row g-4 mb-4">
         <!-- Add / Edit Team Form -->
         <div class="col-lg-4">
             <div class="card shadow-sm border-0">
@@ -153,6 +157,9 @@ if (isset($_GET['edit_team'])) {
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-end">
+                                                <a href="index.php?route=time_tracker_teams&team_id=<?= $t['id'] ?>" class="btn btn-sm btn-outline-danger me-1" title="Manage Critical Tasks">
+                                                    <i class="fa-solid fa-rotate-left"></i> Recurring
+                                                </a>
                                                 <a href="index.php?route=time_tracker_teams&edit_team=<?= $t['id'] ?>" class="btn btn-sm btn-outline-primary me-1">
                                                     <i class="fa-solid fa-pen-to-square"></i>
                                                 </a>
@@ -175,4 +182,125 @@ if (isset($_GET['edit_team'])) {
             </div>
         </div>
     </div>
+
+    <!-- Recurring Critical Tasks Configuration Section -->
+    <?php if (!empty($teams)): ?>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-danger text-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0"><i class="fa-solid fa-rotate me-2"></i> Recurring Critical Team Tasks Manager</h5>
+            <div class="d-flex align-items-center gap-2">
+                <span class="small">Team:</span>
+                <select onchange="location.href='index.php?route=time_tracker_teams&team_id=' + this.value;" class="form-select form-select-sm bg-white text-dark fw-bold" style="width: auto;">
+                    <?php foreach ($teams as $t): ?>
+                        <option value="<?= $t['id'] ?>" <?= $selectedTeamId == $t['id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($t['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-4">
+                <!-- Add Recurring Task Form -->
+                <div class="col-lg-4 border-end">
+                    <h6 class="fw-bold mb-3 text-danger"><i class="fa-solid fa-plus me-1"></i> Add Recurring Critical Task</h6>
+                    <form action="index.php?route=time_tracker_teams&team_id=<?= $selectedTeamId ?>" method="POST">
+                        <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                        <input type="hidden" name="action" value="save_recurring_task">
+                        <input type="hidden" name="team_id" value="<?= $selectedTeamId ?>">
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Critical Task Name</label>
+                            <input type="text" name="task_name" class="form-control form-control-sm" placeholder="e.g. Daily Backup Verification, Weekly Firewall Audit" required>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Project / Category Item</label>
+                            <select name="item_id" class="form-select form-select-sm" required>
+                                <option value="">Select Project / Category...</option>
+                                <?php foreach ($items as $i): ?>
+                                    <option value="<?= $i['id'] ?>">[<?= ucfirst($i['category']) ?>] <?= htmlspecialchars($i['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Recurrence Schedule</label>
+                            <select name="frequency" class="form-select form-select-sm" required>
+                                <option value="daily">Daily Check</option>
+                                <option value="weekly">Weekly (Mondays)</option>
+                                <option value="set_days">Set Days of Week (e.g. Mon, Wed, Fri)</option>
+                                <option value="monthly">Monthly (1st of Month)</option>
+                                <option value="quarterly">Quarterly (Jan 1, Apr 1, Jul 1, Oct 1)</option>
+                                <option value="yearly">Yearly (Jan 1st)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Set Days (for Set Days frequency)</label>
+                            <input type="text" name="set_days" class="form-control form-control-sm" placeholder="1,3,5 or Mon,Wed,Fri">
+                            <div class="form-text small">Use day numbers (1=Mon, 7=Sun) or short names.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Instructions / Description</label>
+                            <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Details or checklist for team members..."></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-danger btn-sm w-100 fw-bold">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i> Save & Schedule Recurring Task
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Active Recurring Tasks List -->
+                <div class="col-lg-8">
+                    <h6 class="fw-bold mb-3 text-secondary"><i class="fa-solid fa-list-check me-1"></i> Active Scheduled Critical Tasks</h6>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Task Name</th>
+                                    <th>Category Item</th>
+                                    <th>Frequency</th>
+                                    <th>Set Days</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($recurringTasks)): ?>
+                                    <tr><td colspan="5" class="text-center py-4 text-muted">No recurring critical tasks scheduled for this team.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($recurringTasks as $rt): ?>
+                                        <tr>
+                                            <td>
+                                                <strong class="text-dark d-block"><?= htmlspecialchars($rt['task_name']) ?></strong>
+                                                <?php if (!empty($rt['description'])): ?>
+                                                    <span class="text-muted d-block small"><?= htmlspecialchars($rt['description']) ?></span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><span class="badge bg-secondary"><?= htmlspecialchars($rt['item_name']) ?></span></td>
+                                            <td><span class="badge bg-danger text-capitalize"><?= htmlspecialchars($rt['frequency']) ?></span></td>
+                                            <td><?= !empty($rt['set_days']) ? htmlspecialchars($rt['set_days']) : '&mdash;' ?></td>
+                                            <td class="text-end">
+                                                <form action="index.php?route=time_tracker_teams&team_id=<?= $selectedTeamId ?>" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this recurring task schedule?');">
+                                                    <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
+                                                    <input type="hidden" name="action" value="delete_recurring_task">
+                                                    <input type="hidden" name="recurring_task_id" value="<?= $rt['id'] ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
+                                                        <i class="fa-solid fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>

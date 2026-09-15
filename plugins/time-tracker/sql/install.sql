@@ -63,6 +63,36 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_team_members (
     KEY idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS plug_time_tracker_recurring_tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    team_id INT NOT NULL,
+    item_id INT NOT NULL,
+    task_name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    frequency ENUM('daily', 'weekly', 'set_days', 'monthly', 'quarterly', 'yearly') NOT NULL DEFAULT 'daily',
+    set_days VARCHAR(64) NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_team_id (team_id),
+    KEY idx_item_id (item_id),
+    KEY idx_frequency (frequency)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS plug_time_tracker_recurring_instances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    recurring_task_id INT NOT NULL,
+    team_id INT NOT NULL,
+    due_date DATE NOT NULL,
+    status ENUM('pending', 'completed') NOT NULL DEFAULT 'pending',
+    completed_by_user_id INT NULL,
+    completed_task_id INT NULL,
+    completed_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_recurring_due (recurring_task_id, due_date),
+    KEY idx_team_due (team_id, due_date),
+    KEY idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS plug_time_tracker_settings (
     setting_key VARCHAR(64) PRIMARY KEY,
     setting_value TEXT NULL
