@@ -12,6 +12,9 @@ $enableTimesheets = TimeTrackerModel::getSetting('enable_timesheets', '1');
 $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
 $emailTeamManagerReports = TimeTrackerModel::getSetting('email_team_manager_reports_enabled', '1');
 
+$ticketBaseUrl = TimeTrackerModel::getSetting('ticket_base_url', '');
+$weeklyHoursTarget = TimeTrackerModel::getSetting('weekly_hours_target', '40.0');
+
 $allCategories = TimeTrackerModel::getCategories(false);
 $teams = TimeTrackerModel::getTeams();
 
@@ -286,11 +289,25 @@ $previewManagerReport = isset($_GET['preview_manager_report']) && $_GET['preview
                             </label>
                         </div>
 
-                        <div class="form-check form-switch mb-2">
+                        <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" name="email_team_manager_reports_enabled" value="1" id="chk_manager_reports" <?= $emailTeamManagerReports === '1' ? 'checked' : '' ?>>
                             <label class="form-check-label fw-bold small text-success" for="chk_manager_reports">
                                 Enable Mon&ndash;Fri 9 AM Team Manager Task Completion Emailed Reports
                             </label>
+                        </div>
+
+                        <hr class="my-3">
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Ticketing System Base URL (Optional)</label>
+                            <input type="text" name="ticket_base_url" class="form-control" placeholder="e.g. https://jira.company.com/browse/ or https://support.company.com/ticket/" value="<?= htmlspecialchars($ticketBaseUrl) ?>">
+                            <div class="form-text small">When set, ticket reference numbers (e.g. INC-10243) automatically become clickable links across all task views.</div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label fw-bold small">Weekly Hours Target</label>
+                            <input type="number" step="0.5" min="1" max="168" name="weekly_hours_target" class="form-control" value="<?= htmlspecialchars($weeklyHoursTarget) ?>" required>
+                            <div class="form-text small">Weekly hours target per employee (default: 40 hrs) for user dashboard target tracking.</div>
                         </div>
                     </div>
                 </div>

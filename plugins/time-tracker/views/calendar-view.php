@@ -3,6 +3,7 @@ $userId = $_SESSION['user_id'] ?? 0;
 
 $selectedMonth = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('m');
 $selectedYear = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
+$viewMode = $_GET['view'] ?? 'grid'; // 'grid' or 'agenda'
 
 $tasks = TimeTrackerModel::getTasksForCalendar($userId, $selectedMonth, $selectedYear);
 
@@ -62,77 +63,158 @@ if ($nextMonth > 12) {
             </a>
             <h4 class="fw-bold mb-0 text-dark"><?= $monthName ?> <?= $selectedYear ?></h4>
             <div class="d-flex align-items-center gap-3">
+                <div class="btn-group btn-group-sm me-2" role="group">
+                    <a href="index.php?route=time_tracker_calendar&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=grid" class="btn <?= $viewMode === 'grid' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                        <i class="fa-solid fa-border-all me-1"></i> Grid
+                    </a>
+                    <a href="index.php?route=time_tracker_calendar&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=agenda" class="btn <?= $viewMode === 'agenda' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                        <i class="fa-solid fa-list-ul me-1"></i> Agenda
+                    </a>
+                </div>
                 <span class="badge bg-success fs-6"><i class="fa-regular fa-clock me-1"></i> Total: <?= number_format($totalMonthHours, 2) ?> hrs</span>
-                <a href="index.php?route=time_tracker_calendar&month=<?= $nextMonth ?>&year=<?= $nextYear ?>" class="btn btn-outline-primary btn-sm">
+                <a href="index.php?route=time_tracker_calendar&month=<?= $nextMonth ?>&year=<?= $nextYear ?>&view=<?= $viewMode ?>" class="btn btn-outline-primary btn-sm">
                     Next Month <i class="fa-solid fa-chevron-right ms-1"></i>
                 </a>
             </div>
         </div>
     </div>
 
-    <!-- Calendar Grid -->
-    <div class="card shadow-sm border-0">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-bordered mb-0 calendar-table" style="table-layout: fixed;">
-                    <thead class="table-dark text-center">
-                        <tr>
-                            <th style="width: 14.28%;">Sun</th>
-                            <th style="width: 14.28%;">Mon</th>
-                            <th style="width: 14.28%;">Tue</th>
-                            <th style="width: 14.28%;">Wed</th>
-                            <th style="width: 14.28%;">Thu</th>
-                            <th style="width: 14.28%;">Fri</th>
-                            <th style="width: 14.28%;">Sat</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+    <?php if ($viewMode === 'agenda'): ?>
+        <!-- Agenda List View -->
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-light py-3">
+                <h5 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-list-ul me-2"></i> Monthly Task Agenda</h5>
+            </div>
+            <div class="card-body p-0">
+                <?php if (empty($tasks)): ?>
+                    <div class="text-center py-5 text-muted">
+                        <i class="fa-solid fa-calendar-xmark fs-2 mb-2 d-block"></i>
+                        No tasks logged for <?= $monthName ?> <?= $selectedYear ?>.
+                    </div>
+                <?php else: ?>
+                    <div class="list-group list-group-flush">
                         <?php
-                        $dayCounter = 1;
-                        $cellCounter = 0;
-                        while ($dayCounter <= $daysInMonth) {
-                            echo "<tr>";
-                            for ($i = 0; $i < 7; $i++) {
-                                if ($cellCounter < $startDayOfWeek || $dayCounter > $daysInMonth) {
-                                    echo "<td class='bg-light text-muted p-2' style='height: 120px; min-height: 120px;'></td>";
-                                } else {
-                                    $dayTasks = $tasksByDay[$dayCounter] ?? [];
-                                    $dayHours = array_sum(array_column($dayTasks, 'hours'));
-                                    $isToday = ($dayCounter == date('j') && $selectedMonth == date('n') && $selectedYear == date('Y'));
-                                    $bgClass = $isToday ? 'bg-primary-subtle border border-primary' : '';
-
-                                    echo "<td class='p-2 align-top {$bgClass}' style='height: 120px; min-height: 120px; overflow-y: auto;'>";
-                                    echo "<div class='d-flex justify-content-between align-items-center mb-1'>";
-                                    echo "<span class='fw-bold fs-6 " . ($isToday ? 'text-primary' : '') . "'>{$dayCounter}</span>";
-                                    if ($dayHours > 0) {
-                                        echo "<span class='badge bg-success small'>" . number_format($dayHours, 2) . " hrs</span>";
-                                    }
-                                    echo "</div>";
-
-                                    echo "<div class='task-list small'>";
-                                    foreach ($dayTasks as $t) {
-                                        $bClass = 'bg-secondary';
-                                        if ($t['item_category'] === 'project') $bClass = 'bg-primary';
-                                        elseif ($t['item_category'] === 'support') $bClass = 'bg-info text-dark';
-                                        elseif ($t['item_category'] === 'maintenance') $bClass = 'bg-warning text-dark';
-
-                                        echo "<div class='mb-1 p-1 rounded bg-light border text-truncate' title='" . htmlspecialchars($t['item_name'] . ": " . $t['task_name']) . "'>";
-                                        echo "<span class='badge {$bClass} me-1'>" . number_format($t['hours'], 2) . "h</span>";
-                                        echo "<strong class='text-dark'>" . htmlspecialchars($t['task_name']) . "</strong>";
-                                        echo "</div>";
-                                    }
-                                    echo "</div>";
-                                    echo "</td>";
-                                    $dayCounter++;
-                                }
-                                $cellCounter++;
-                            }
-                            echo "</tr>";
-                        }
+                        for ($d = 1; $d <= $daysInMonth; $d++):
+                            $dayTasks = $tasksByDay[$d] ?? [];
+                            if (empty($dayTasks)) continue;
+                            $dayTs = mktime(0, 0, 0, $selectedMonth, $d, $selectedYear);
+                            $dayHours = array_sum(array_column($dayTasks, 'hours'));
                         ?>
-                    </tbody>
-                </table>
+                            <div class="list-group-item p-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                                    <h6 class="fw-bold mb-0 text-primary">
+                                        <i class="fa-regular fa-calendar-check me-2"></i> <?= date('l, F j, Y', $dayTs) ?>
+                                    </h6>
+                                    <span class="badge bg-success fs-6"><?= number_format($dayHours, 2) ?> hrs</span>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover align-middle mb-0">
+                                        <thead>
+                                            <tr class="text-muted small">
+                                                <th>Time Range</th>
+                                                <th>Category</th>
+                                                <th>Applied Item / Project</th>
+                                                <th>Task Description</th>
+                                                <th>Hours</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($dayTasks as $t):
+                                                $bClass = 'bg-secondary';
+                                                if ($t['item_category'] === 'project') $bClass = 'bg-primary';
+                                                elseif ($t['item_category'] === 'support') $bClass = 'bg-info text-dark';
+                                                elseif ($t['item_category'] === 'maintenance') $bClass = 'bg-warning text-dark';
+
+                                                $endTs = strtotime($t['entry_datetime']) + (int)round(((float)$t['hours']) * 3600);
+                                                $timeStr = date('h:i A', strtotime($t['entry_datetime'])) . ' – ' . (($t['status'] ?? '') === 'in_progress' ? 'Now' : date('h:i A', $endTs));
+                                            ?>
+                                                <tr>
+                                                    <td class="small fw-bold text-nowrap"><?= $timeStr ?></td>
+                                                    <td><span class="badge <?= $bClass ?>"><?= ucfirst($t['item_category'] ?? '') ?></span></td>
+                                                    <td class="fw-bold"><?= htmlspecialchars($t['item_name'] ?? 'Unassigned') ?></td>
+                                                    <td>
+                                                        <?= htmlspecialchars($t['task_name']) ?>
+                                                        <?php if (!empty($t['ticket_ref'])): ?>
+                                                            <code class="ms-1">[<?= htmlspecialchars($t['ticket_ref']) ?>]</code>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="fw-bold text-success text-nowrap"><?= number_format($t['hours'], 2) ?> hrs</td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        <?php endfor; ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
-    </div>
+    <?php else: ?>
+        <!-- Calendar Grid View -->
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-bordered mb-0 calendar-table" style="table-layout: fixed;">
+                        <thead class="table-dark text-center">
+                            <tr>
+                                <th style="width: 14.28%;">Sun</th>
+                                <th style="width: 14.28%;">Mon</th>
+                                <th style="width: 14.28%;">Tue</th>
+                                <th style="width: 14.28%;">Wed</th>
+                                <th style="width: 14.28%;">Thu</th>
+                                <th style="width: 14.28%;">Fri</th>
+                                <th style="width: 14.28%;">Sat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php
+                            $dayCounter = 1;
+                            $cellCounter = 0;
+                            while ($dayCounter <= $daysInMonth) {
+                                echo "<tr>";
+                                for ($i = 0; $i < 7; $i++) {
+                                    if ($cellCounter < $startDayOfWeek || $dayCounter > $daysInMonth) {
+                                        echo "<td class='bg-light text-muted p-2' style='height: 120px; min-height: 120px;'></td>";
+                                    } else {
+                                        $dayTasks = $tasksByDay[$dayCounter] ?? [];
+                                        $dayHours = array_sum(array_column($dayTasks, 'hours'));
+                                        $isToday = ($dayCounter == date('j') && $selectedMonth == date('n') && $selectedYear == date('Y'));
+                                        $bgClass = $isToday ? 'bg-primary-subtle border border-primary' : '';
+
+                                        echo "<td class='p-2 align-top {$bgClass}' style='height: 120px; min-height: 120px; overflow-y: auto;'>";
+                                        echo "<div class='d-flex justify-content-between align-items-center mb-1'>";
+                                        echo "<span class='fw-bold fs-6 " . ($isToday ? 'text-primary' : '') . "'>{$dayCounter}</span>";
+                                        if ($dayHours > 0) {
+                                            echo "<span class='badge bg-success small'>" . number_format($dayHours, 2) . " hrs</span>";
+                                        }
+                                        echo "</div>";
+
+                                        echo "<div class='task-list small'>";
+                                        foreach ($dayTasks as $t) {
+                                            $bClass = 'bg-secondary';
+                                            if ($t['item_category'] === 'project') $bClass = 'bg-primary';
+                                            elseif ($t['item_category'] === 'support') $bClass = 'bg-info text-dark';
+                                            elseif ($t['item_category'] === 'maintenance') $bClass = 'bg-warning text-dark';
+
+                                            echo "<div class='mb-1 p-1 rounded bg-light border text-truncate' title='" . htmlspecialchars($t['item_name'] . ": " . $t['task_name']) . "'>";
+                                            echo "<span class='badge {$bClass} me-1'>" . number_format($t['hours'], 2) . "h</span>";
+                                            echo "<strong class='text-dark'>" . htmlspecialchars($t['task_name']) . "</strong>";
+                                            echo "</div>";
+                                        }
+                                        echo "</div>";
+                                        echo "</td>";
+                                        $dayCounter++;
+                                    }
+                                    $cellCounter++;
+                                }
+                                echo "</tr>";
+                            }
+                            ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 </div>

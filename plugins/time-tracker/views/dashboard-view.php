@@ -22,6 +22,15 @@ if (isset($_GET['edit_task'])) {
 }
 
 $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime', '1');
+$ticketBaseUrl = TimeTrackerModel::getSetting('ticket_base_url', '');
+
+// Calculate weekly hours for target progress bar
+$weekMon = date('Y-m-d', strtotime('monday this week'));
+$weekSun = date('Y-m-d', strtotime('sunday this week'));
+$thisWeekTasks = TimeTrackerModel::getTasks($userId, $weekMon, $weekSun);
+$thisWeekHours = array_sum(array_column($thisWeekTasks, 'hours'));
+$weeklyTargetHours = (float)TimeTrackerModel::getSetting('weekly_hours_target', 40.0);
+$weeklyPct = $weeklyTargetHours > 0 ? min(100, round(($thisWeekHours / $weeklyTargetHours) * 100)) : 0;
 ?>
 
 <div class="container-fluid py-3">
@@ -30,6 +39,15 @@ $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime
         <div>
             <h3 class="fw-bold mb-1"><i class="fa-solid fa-clock text-primary me-2"></i> Time Tracker</h3>
             <p class="text-muted small mb-0">Track hours spent on IT projects, support tickets, and maintenance activities.</p>
+        </div>
+        <div class="bg-white border rounded p-2 px-3 shadow-sm d-flex align-items-center gap-3">
+            <div>
+                <small class="text-muted fw-bold d-block">Weekly Target Progress</small>
+                <div class="fw-bold text-dark small"><?= number_format($thisWeekHours, 1) ?> / <?= number_format($weeklyTargetHours, 1) ?> hrs (<?= $weeklyPct ?>%)</div>
+            </div>
+            <div class="progress" style="width: 100px; height: 10px;">
+                <div class="progress-bar bg-success" role="progressbar" style="width: <?= $weeklyPct ?>%;"></div>
+            </div>
         </div>
         <div class="d-flex gap-2">
             <a href="index.php?route=time_tracker_calendar" class="btn btn-outline-secondary btn-sm">
@@ -299,7 +317,18 @@ $enableBillableOvertime = TimeTrackerModel::getSetting('enable_billable_overtime
                                     <td class="fw-bold">
                                         <?= htmlspecialchars($task['item_name'] ?? 'Unassigned') ?>
                                     </td>
-                                    <td><?= htmlspecialchars($task['task_name']) ?></td>
+                                    <td>
+                                        <?= htmlspecialchars($task['task_name']) ?>
+                                        <?php if (!empty($task['ticket_ref'])): ?>
+                                            <?php if (!empty($ticketBaseUrl)): ?>
+                                                <a href="<?= htmlspecialchars(rtrim($ticketBaseUrl, '/') . '/' . ltrim($task['ticket_ref'], '/')) ?>" target="_blank" class="badge bg-light text-primary border ms-1" title="View Ticket in Issue Tracker">
+                                                    <i class="fa-solid fa-ticket me-1"></i><?= htmlspecialchars($task['ticket_ref']) ?> <i class="fa-solid fa-arrow-up-right-from-square fs-7 ms-1"></i>
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="badge bg-light text-dark border ms-1"><i class="fa-solid fa-ticket me-1"></i><?= htmlspecialchars($task['ticket_ref']) ?></span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </td>
                                     <td>
                                         <?php if (($task['status'] ?? 'completed') === 'in_progress'): ?>
                                             <span class="badge bg-warning text-dark"><i class="fa-solid fa-spinner fa-spin me-1"></i> In Progress</span>

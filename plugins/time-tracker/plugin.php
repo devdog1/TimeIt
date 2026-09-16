@@ -933,10 +933,15 @@ function time_tracker_handle_posts() {
             $enableBillableOvertime = isset($_POST['enable_billable_overtime']) ? '1' : '0';
             $emailTeamManagerReports = isset($_POST['email_team_manager_reports_enabled']) ? '1' : '0';
 
+            $ticketBaseUrl = trim($_POST['ticket_base_url'] ?? '');
+            $weeklyHoursTarget = (float)($_POST['weekly_hours_target'] ?? 40.0);
+
             $catProjectEnabled = isset($_POST['cat_project_enabled']) ? '1' : '0';
             $catSupportEnabled = isset($_POST['cat_support_enabled']) ? '1' : '0';
             $catMaintenanceEnabled = isset($_POST['cat_maintenance_enabled']) ? '1' : '0';
 
+            TimeTrackerModel::saveSetting('ticket_base_url', $ticketBaseUrl);
+            TimeTrackerModel::saveSetting('weekly_hours_target', $weeklyHoursTarget);
             TimeTrackerModel::saveSetting('fy_start_month', $fyMonth);
             TimeTrackerModel::saveSetting('fy_start_day', $fyDay);
             TimeTrackerModel::saveSetting('email_reports_enabled', $emailEnabled);
