@@ -167,6 +167,17 @@ document.addEventListener("DOMContentLoaded", function() {
             center: "title",
             right: "dayGridMonth,timeGridWeek,timeGridDay,listMonth"
         },
+        datesSet: function(dateInfo) {
+            var currDate = dateInfo.view.currentStart;
+            var viewMonth = currDate.getMonth() + 1;
+            var viewYear = currDate.getFullYear();
+            var selectedMonth = <?= $selectedMonth ?>;
+            var selectedYear = <?= $selectedYear ?>;
+
+            if (viewMonth !== selectedMonth || viewYear !== selectedYear) {
+                window.location.href = "index.php?route=time_tracker_calendar&month=" + viewMonth + "&year=" + viewYear;
+            }
+        },
         buttonText: {
             today: "Today",
             month: "Grid Month",

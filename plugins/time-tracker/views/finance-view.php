@@ -176,6 +176,7 @@ $exportCsvUrl = "index.php?route=time_tracker_finance&export_csv=1&start_date={$
                             <th>User Name</th>
                             <th>Date & Time</th>
                             <th>Category</th>
+                            <th>Capital GL / Project #</th>
                             <th>Applied Item / Project</th>
                             <th>Task Description</th>
                             <th class="text-end">Logged Hours</th>
@@ -209,6 +210,9 @@ $exportCsvUrl = "index.php?route=time_tracker_finance&export_csv=1&start_date={$
                                         </small>
                                     </td>
                                     <td><span class="badge <?= $bClass ?>"><?= ucfirst($task['item_category'] ?? 'N/A') ?></span></td>
+                                    <td class="fw-bold">
+                                        <?= !empty($task['capital_gl_number']) ? '<code>' . htmlspecialchars($task['capital_gl_number']) . '</code>' : '<span class="text-muted small">&mdash;</span>' ?>
+                                    </td>
                                     <td class="fw-bold"><?= htmlspecialchars($task['item_name'] ?? 'Unassigned') ?></td>
                                     <td><?= htmlspecialchars($task['task_name']) ?></td>
                                     <td class="fw-bold text-success text-end"><?= number_format($task['hours'], 2) ?> hrs</td>

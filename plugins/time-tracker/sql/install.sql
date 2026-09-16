@@ -9,6 +9,15 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_categories (
     KEY idx_is_enabled (is_enabled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS plug_time_tracker_capital_gls (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    gl_number VARCHAR(64) NOT NULL UNIQUE,
+    description VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_gl_number (gl_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS plug_time_tracker_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     category VARCHAR(64) NOT NULL DEFAULT 'project',
@@ -16,10 +25,12 @@ CREATE TABLE IF NOT EXISTS plug_time_tracker_items (
     description TEXT NULL,
     estimated_hours DECIMAL(8,2) NULL,
     lead_user_id INT NULL,
+    capital_gl_number VARCHAR(64) NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     is_archived TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_category (category),
+    KEY idx_capital_gl (capital_gl_number),
     KEY idx_is_active (is_active),
     KEY idx_is_archived (is_archived)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

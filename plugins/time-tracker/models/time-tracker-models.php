@@ -31,6 +31,15 @@ class TimeTrackerModel {
             KEY idx_is_enabled (is_enabled)
         ");
 
+        $pdb->createTable('capital_gls', "
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            gl_number VARCHAR(64) NOT NULL UNIQUE,
+            description VARCHAR(255) NOT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_gl_number (gl_number)
+        ");
+
         $pdb->createTable('items', "
             id INT AUTO_INCREMENT PRIMARY KEY,
             category VARCHAR(64) NOT NULL DEFAULT 'project',
@@ -38,10 +47,12 @@ class TimeTrackerModel {
             description TEXT NULL,
             estimated_hours DECIMAL(8,2) NULL,
             lead_user_id INT NULL,
+            capital_gl_number VARCHAR(64) NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             is_archived TINYINT(1) NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY idx_category (category),
+            KEY idx_capital_gl (capital_gl_number),
             KEY idx_is_active (is_active),
             KEY idx_is_archived (is_archived)
         ");
@@ -138,6 +149,7 @@ class TimeTrackerModel {
             'teams',
             'tasks',
             'items',
+            'capital_gls',
             'categories'
         ];
 
@@ -1005,7 +1017,7 @@ class TimeTrackerModel {
         return $item;
     }
 
-    public static function saveItem($id, $category, $name, $description = '', $estimated_hours = null, $lead_user_id = null, $is_active = 1) {
+    public static function saveItem($id, $category, $name, $description = '', $estimated_hours = null, $lead_user_id = null, $is_active = 1, $capital_gl_number = null) {
         $pdb = self::getPdb();
         $tbItems = $pdb->getTableName('items');
 
@@ -1023,20 +1035,82 @@ class TimeTrackerModel {
         $estHours = ($estimated_hours !== null && $estimated_hours !== '') ? (float)$estimated_hours : null;
         $leadUser = ($lead_user_id !== null && $lead_user_id !== '' && (int)$lead_user_id > 0) ? (int)$lead_user_id : null;
         $activeVal = $is_active ? 1 : 0;
+        $capGl = (!empty(trim($capital_gl_number))) ? trim($capital_gl_number) : null;
 
         if ($id > 0) {
             $pdb->query(
-                "UPDATE {$tbItems} SET category = ?, name = ?, description = ?, estimated_hours = ?, lead_user_id = ?, is_active = ? WHERE id = ?",
-                [$category, trim($name), trim($description), $estHours, $leadUser, $activeVal, $id]
+                "UPDATE {$tbItems} SET category = ?, name = ?, description = ?, estimated_hours = ?, lead_user_id = ?, capital_gl_number = ?, is_active = ? WHERE id = ?",
+                [$category, trim($name), trim($description), $estHours, $leadUser, $capGl, $activeVal, $id]
             );
             return $id;
         } else {
             $pdb->query(
-                "INSERT INTO {$tbItems} (category, name, description, estimated_hours, lead_user_id, is_active) VALUES (?, ?, ?, ?, ?, ?)",
-                [$category, trim($name), trim($description), $estHours, $leadUser, $activeVal]
+                "INSERT INTO {$tbItems} (category, name, description, estimated_hours, lead_user_id, capital_gl_number, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [$category, trim($name), trim($description), $estHours, $leadUser, $capGl, $activeVal]
             );
             return get_db_connection()->lastInsertId();
         }
+    }
+
+    /* ================= CAPITAL GL / PROJECT NUMBERS METHODS ================= */
+
+    public static function getCapitalGls($activeOnly = false) {
+        $pdb = self::getPdb();
+        $tbGls = $pdb->getTableName('capital_gls');
+
+        $where = $activeOnly ? "WHERE is_active = 1" : "";
+        $stmt = $pdb->query("SELECT * FROM {$tbGls} {$where} ORDER BY gl_number ASC");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public static function getCapitalGlById($id) {
+        $pdb = self::getPdb();
+        $tbGls = $pdb->getTableName('capital_gls');
+        $stmt = $pdb->query("SELECT * FROM {$tbGls} WHERE id = ?", [$id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public static function saveCapitalGl($id, $glNumber, $description, $isActive = 1) {
+        $pdb = self::getPdb();
+        $tbGls = $pdb->getTableName('capital_gls');
+
+        $cleanGl = trim($glNumber);
+        if (empty($cleanGl)) {
+            throw new Exception("Capital GL / Project Number cannot be empty.");
+        }
+        if (empty(trim($description))) {
+            throw new Exception("Capital GL description cannot be empty.");
+        }
+
+        $activeVal = $isActive ? 1 : 0;
+
+        if ($id > 0) {
+            $pdb->query("UPDATE {$tbGls} SET gl_number = ?, description = ?, is_active = ? WHERE id = ?", [$cleanGl, trim($description), $activeVal, $id]);
+            return $id;
+        } else {
+            // Check for uniqueness
+            $existing = $pdb->query("SELECT id FROM {$tbGls} WHERE gl_number = ?", [$cleanGl])->fetch();
+            if ($existing) {
+                throw new Exception("Capital GL / Project Number '{$cleanGl}' already exists.");
+            }
+
+            $pdb->query("INSERT INTO {$tbGls} (gl_number, description, is_active) VALUES (?, ?, ?)", [$cleanGl, trim($description), $activeVal]);
+            return get_db_connection()->lastInsertId();
+        }
+    }
+
+    public static function toggleCapitalGlActive($id, $isActive) {
+        $pdb = self::getPdb();
+        $tbGls = $pdb->getTableName('capital_gls');
+        $pdb->query("UPDATE {$tbGls} SET is_active = ? WHERE id = ?", [$isActive ? 1 : 0, $id]);
+        return true;
+    }
+
+    public static function deleteCapitalGl($id) {
+        $pdb = self::getPdb();
+        $tbGls = $pdb->getTableName('capital_gls');
+        $pdb->query("DELETE FROM {$tbGls} WHERE id = ?", [$id]);
+        return true;
     }
 
     public static function deleteItem($id) {
@@ -1127,7 +1201,7 @@ class TimeTrackerModel {
         $tbTasks = $pdb->getTableName('tasks');
         $tbItems = $pdb->getTableName('items');
 
-        $sql = "SELECT t.*, i.name as item_name, i.category as item_category, i.estimated_hours, i.lead_user_id
+        $sql = "SELECT t.*, i.name as item_name, i.category as item_category, i.estimated_hours, i.lead_user_id, i.capital_gl_number
                 FROM {$tbTasks} t
                 LEFT JOIN {$tbItems} i ON t.item_id = i.id
                 WHERE t.id = ?";
@@ -1181,7 +1255,7 @@ class TimeTrackerModel {
 
         $whereSql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
 
-        $sql = "SELECT t.*, i.name as item_name, i.category as item_category, i.estimated_hours, i.lead_user_id
+        $sql = "SELECT t.*, i.name as item_name, i.category as item_category, i.estimated_hours, i.lead_user_id, i.capital_gl_number
                 FROM {$tbTasks} t
                 LEFT JOIN {$tbItems} i ON t.item_id = i.id
                 {$whereSql}

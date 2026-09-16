@@ -821,10 +821,34 @@ function time_tracker_handle_posts() {
             $description = $_POST['description'] ?? '';
             $estimatedHours = $_POST['estimated_hours'] !== '' ? $_POST['estimated_hours'] : null;
             $leadUserId = $_POST['lead_user_id'] !== '' ? $_POST['lead_user_id'] : null;
+            $capitalGlNumber = $_POST['capital_gl_number'] ?? null;
             $isActive = isset($_POST['is_active']) ? 1 : 0;
 
-            TimeTrackerModel::saveItem($itemId, $category, $name, $description, $estimatedHours, $leadUserId, $isActive);
+            TimeTrackerModel::saveItem($itemId, $category, $name, $description, $estimatedHours, $leadUserId, $isActive, $capitalGlNumber);
             $_SESSION['tt_success'] = ($itemId > 0) ? "Item updated successfully." : "New project/category item created!";
+        }
+        elseif ($action === 'save_capital_gl') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $glId = (int)($_POST['gl_id'] ?? 0);
+            $glNumber = $_POST['gl_number'] ?? '';
+            $description = $_POST['description'] ?? '';
+            $isActive = isset($_POST['is_active']) ? 1 : 0;
+
+            TimeTrackerModel::saveCapitalGl($glId, $glNumber, $description, $isActive);
+            $_SESSION['tt_success'] = ($glId > 0) ? "Capital GL / Project Number updated!" : "New Capital GL / Project Number created!";
+        }
+        elseif ($action === 'toggle_capital_gl_status') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $glId = (int)($_POST['gl_id'] ?? 0);
+            $targetStatus = (int)($_POST['target_status'] ?? 1);
+            TimeTrackerModel::toggleCapitalGlActive($glId, $targetStatus);
+            $_SESSION['tt_success'] = ($targetStatus === 1) ? "Capital GL enabled." : "Capital GL disabled.";
+        }
+        elseif ($action === 'delete_capital_gl') {
+            if (!$isSupervisor) throw new Exception("Access Denied: Supervisor privileges required.");
+            $glId = (int)($_POST['gl_id'] ?? 0);
+            TimeTrackerModel::deleteCapitalGl($glId);
+            $_SESSION['tt_success'] = "Capital GL / Project Number deleted successfully.";
         }
         elseif ($action === 'toggle_item_status') {
             $itemId = (int)($_POST['item_id'] ?? 0);
@@ -997,7 +1021,7 @@ function time_tracker_export_csv() {
     header('Content-Disposition: attachment; filename=time_tracker_report_' . date('Y-m-d') . '.csv');
 
     $output = fopen('php://output', 'w');
-    fputcsv($output, ['Task ID', 'User Name', 'Date & Time', 'Category', 'Item / Project Name', 'Task Description', 'Hours Spent', 'Status']);
+    fputcsv($output, ['Task ID', 'User Name', 'Date & Time', 'Category', 'Capital GL / Project #', 'Item / Project Name', 'Task Description', 'Hours Spent', 'Status']);
 
     foreach ($tasks as $t) {
         fputcsv($output, [
@@ -1005,6 +1029,7 @@ function time_tracker_export_csv() {
             $t['user_name'],
             $t['entry_datetime'],
             ucfirst($t['item_category'] ?? ''),
+            $t['capital_gl_number'] ?? 'N/A',
             $t['item_name'] ?? 'Unassigned',
             $t['task_name'],
             number_format($t['hours'], 2),
