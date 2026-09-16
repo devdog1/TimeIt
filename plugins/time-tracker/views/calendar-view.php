@@ -41,180 +41,141 @@ if ($nextMonth > 12) {
 }
 ?>
 
+<?php
+// Prepare FullCalendar event objects
+$fcEvents = [];
+foreach ($tasks as $t) {
+    $startIso = date('Y-m-d\TH:i:s', strtotime($t['entry_datetime']));
+    $endTs = strtotime($t['entry_datetime']) + (int)round(((float)$t['hours']) * 3600);
+    $endIso = date('Y-m-d\TH:i:s', $endTs);
+
+    $color = '#6c757d';
+    if ($t['item_category'] === 'project') $color = '#0d6efd';
+    elseif ($t['item_category'] === 'support') $color = '#0dcaf0';
+    elseif ($t['item_category'] === 'maintenance') $color = '#ffc107';
+
+    $fcEvents[] = [
+        'id' => $t['id'],
+        'title' => '[' . number_format($t['hours'], 1) . 'h] ' . $t['task_name'],
+        'start' => $startIso,
+        'end' => $endIso,
+        'backgroundColor' => $color,
+        'borderColor' => $color,
+        'textColor' => ($t['item_category'] === 'maintenance' || $t['item_category'] === 'support') ? '#000000' : '#ffffff',
+        'extendedProps' => [
+            'task_name' => $t['task_name'],
+            'item_name' => $t['item_name'] ?? 'Unassigned',
+            'category' => ucfirst($t['item_category'] ?? ''),
+            'hours' => number_format($t['hours'], 2),
+            'ticket_ref' => $t['ticket_ref'] ?? '',
+            'status' => $t['status'] ?? 'completed',
+            'entry_datetime' => date('M d, Y h:i A', strtotime($t['entry_datetime'])),
+            'end_datetime' => date('M d, Y h:i A', $endTs)
+        ]
+    ];
+}
+?>
+
+<!-- FullCalendar Library -->
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+
 <div class="container-fluid py-3">
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h3 class="fw-bold mb-1"><i class="fa-solid fa-calendar-days text-primary me-2"></i> User Calendar View</h3>
-            <p class="text-muted small mb-0">Monthly view of logged hours and task activities.</p>
+            <h3 class="fw-bold mb-1"><i class="fa-solid fa-calendar-days text-primary me-2"></i> User Calendar (FullCalendar)</h3>
+            <p class="text-muted small mb-0">Interactive FullCalendar view of logged hours and task activities.</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge bg-success fs-6"><i class="fa-regular fa-clock me-1"></i> Total Month: <?= number_format($totalMonthHours, 2) ?> hrs</span>
             <a href="index.php?route=time_tracker" class="btn btn-outline-secondary btn-sm">
                 <i class="fa-solid fa-arrow-left me-1"></i> Back to Dashboard
             </a>
         </div>
     </div>
 
-    <!-- Month Navigation Bar -->
+    <!-- FullCalendar Card Container -->
     <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body py-2 d-flex justify-content-between align-items-center">
-            <a href="index.php?route=time_tracker_calendar&month=<?= $prevMonth ?>&year=<?= $prevYear ?>" class="btn btn-outline-primary btn-sm">
-                <i class="fa-solid fa-chevron-left me-1"></i> Previous Month
-            </a>
-            <h4 class="fw-bold mb-0 text-dark"><?= $monthName ?> <?= $selectedYear ?></h4>
-            <div class="d-flex align-items-center gap-3">
-                <div class="btn-group btn-group-sm me-2" role="group">
-                    <a href="index.php?route=time_tracker_calendar&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=grid" class="btn <?= $viewMode === 'grid' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                        <i class="fa-solid fa-border-all me-1"></i> Grid
-                    </a>
-                    <a href="index.php?route=time_tracker_calendar&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=agenda" class="btn <?= $viewMode === 'agenda' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                        <i class="fa-solid fa-list-ul me-1"></i> Agenda
-                    </a>
-                </div>
-                <span class="badge bg-success fs-6"><i class="fa-regular fa-clock me-1"></i> Total: <?= number_format($totalMonthHours, 2) ?> hrs</span>
-                <a href="index.php?route=time_tracker_calendar&month=<?= $nextMonth ?>&year=<?= $nextYear ?>&view=<?= $viewMode ?>" class="btn btn-outline-primary btn-sm">
-                    Next Month <i class="fa-solid fa-chevron-right ms-1"></i>
-                </a>
+        <div class="card-body p-3">
+            <div id="fullCalendarContainer" style="min-height: 700px;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Task Detail Modal -->
+<div class="modal fade" id="taskDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-circle-info me-2"></i> Task Entry Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h5 id="modalTaskTitle" class="fw-bold text-dark mb-3"></h5>
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-4">Category:</dt>
+                    <dd class="col-sm-8" id="modalTaskCategory"></dd>
+
+                    <dt class="col-sm-4">Project / Item:</dt>
+                    <dd class="col-sm-8 fw-bold" id="modalTaskItem"></dd>
+
+                    <dt class="col-sm-4">Ticket Ref #:</dt>
+                    <dd class="col-sm-8" id="modalTaskTicket"></dd>
+
+                    <dt class="col-sm-4">Start Time:</dt>
+                    <dd class="col-sm-8" id="modalTaskStart"></dd>
+
+                    <dt class="col-sm-4">End Time:</dt>
+                    <dd class="col-sm-8" id="modalTaskEnd"></dd>
+
+                    <dt class="col-sm-4">Hours Spent:</dt>
+                    <dd class="col-sm-8 fw-bold text-success" id="modalTaskHours"></dd>
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                <a href="#" id="modalEditLink" class="btn btn-primary btn-sm fw-bold"><i class="fa-solid fa-pen-to-square me-1"></i> Edit Task</a>
             </div>
         </div>
     </div>
-
-    <?php if ($viewMode === 'agenda'): ?>
-        <!-- Agenda List View -->
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-light py-3">
-                <h5 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-list-ul me-2"></i> Monthly Task Agenda</h5>
-            </div>
-            <div class="card-body p-0">
-                <?php if (empty($tasks)): ?>
-                    <div class="text-center py-5 text-muted">
-                        <i class="fa-solid fa-calendar-xmark fs-2 mb-2 d-block"></i>
-                        No tasks logged for <?= $monthName ?> <?= $selectedYear ?>.
-                    </div>
-                <?php else: ?>
-                    <div class="list-group list-group-flush">
-                        <?php
-                        for ($d = 1; $d <= $daysInMonth; $d++):
-                            $dayTasks = $tasksByDay[$d] ?? [];
-                            if (empty($dayTasks)) continue;
-                            $dayTs = mktime(0, 0, 0, $selectedMonth, $d, $selectedYear);
-                            $dayHours = array_sum(array_column($dayTasks, 'hours'));
-                        ?>
-                            <div class="list-group-item p-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-                                    <h6 class="fw-bold mb-0 text-primary">
-                                        <i class="fa-regular fa-calendar-check me-2"></i> <?= date('l, F j, Y', $dayTs) ?>
-                                    </h6>
-                                    <span class="badge bg-success fs-6"><?= number_format($dayHours, 2) ?> hrs</span>
-                                </div>
-                                <div class="table-responsive">
-                                    <table class="table table-sm table-hover align-middle mb-0">
-                                        <thead>
-                                            <tr class="text-muted small">
-                                                <th>Time Range</th>
-                                                <th>Category</th>
-                                                <th>Applied Item / Project</th>
-                                                <th>Task Description</th>
-                                                <th>Hours</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($dayTasks as $t):
-                                                $bClass = 'bg-secondary';
-                                                if ($t['item_category'] === 'project') $bClass = 'bg-primary';
-                                                elseif ($t['item_category'] === 'support') $bClass = 'bg-info text-dark';
-                                                elseif ($t['item_category'] === 'maintenance') $bClass = 'bg-warning text-dark';
-
-                                                $endTs = strtotime($t['entry_datetime']) + (int)round(((float)$t['hours']) * 3600);
-                                                $timeStr = date('h:i A', strtotime($t['entry_datetime'])) . ' – ' . (($t['status'] ?? '') === 'in_progress' ? 'Now' : date('h:i A', $endTs));
-                                            ?>
-                                                <tr>
-                                                    <td class="small fw-bold text-nowrap"><?= $timeStr ?></td>
-                                                    <td><span class="badge <?= $bClass ?>"><?= ucfirst($t['item_category'] ?? '') ?></span></td>
-                                                    <td class="fw-bold"><?= htmlspecialchars($t['item_name'] ?? 'Unassigned') ?></td>
-                                                    <td>
-                                                        <?= htmlspecialchars($t['task_name']) ?>
-                                                        <?php if (!empty($t['ticket_ref'])): ?>
-                                                            <code class="ms-1">[<?= htmlspecialchars($t['ticket_ref']) ?>]</code>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td class="fw-bold text-success text-nowrap"><?= number_format($t['hours'], 2) ?> hrs</td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        <?php endfor; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    <?php else: ?>
-        <!-- Calendar Grid View -->
-        <div class="card shadow-sm border-0">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-bordered mb-0 calendar-table" style="table-layout: fixed;">
-                        <thead class="table-dark text-center">
-                            <tr>
-                                <th style="width: 14.28%;">Sun</th>
-                                <th style="width: 14.28%;">Mon</th>
-                                <th style="width: 14.28%;">Tue</th>
-                                <th style="width: 14.28%;">Wed</th>
-                                <th style="width: 14.28%;">Thu</th>
-                                <th style="width: 14.28%;">Fri</th>
-                                <th style="width: 14.28%;">Sat</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php
-                            $dayCounter = 1;
-                            $cellCounter = 0;
-                            while ($dayCounter <= $daysInMonth) {
-                                echo "<tr>";
-                                for ($i = 0; $i < 7; $i++) {
-                                    if ($cellCounter < $startDayOfWeek || $dayCounter > $daysInMonth) {
-                                        echo "<td class='bg-light text-muted p-2' style='height: 120px; min-height: 120px;'></td>";
-                                    } else {
-                                        $dayTasks = $tasksByDay[$dayCounter] ?? [];
-                                        $dayHours = array_sum(array_column($dayTasks, 'hours'));
-                                        $isToday = ($dayCounter == date('j') && $selectedMonth == date('n') && $selectedYear == date('Y'));
-                                        $bgClass = $isToday ? 'bg-primary-subtle border border-primary' : '';
-
-                                        echo "<td class='p-2 align-top {$bgClass}' style='height: 120px; min-height: 120px; overflow-y: auto;'>";
-                                        echo "<div class='d-flex justify-content-between align-items-center mb-1'>";
-                                        echo "<span class='fw-bold fs-6 " . ($isToday ? 'text-primary' : '') . "'>{$dayCounter}</span>";
-                                        if ($dayHours > 0) {
-                                            echo "<span class='badge bg-success small'>" . number_format($dayHours, 2) . " hrs</span>";
-                                        }
-                                        echo "</div>";
-
-                                        echo "<div class='task-list small'>";
-                                        foreach ($dayTasks as $t) {
-                                            $bClass = 'bg-secondary';
-                                            if ($t['item_category'] === 'project') $bClass = 'bg-primary';
-                                            elseif ($t['item_category'] === 'support') $bClass = 'bg-info text-dark';
-                                            elseif ($t['item_category'] === 'maintenance') $bClass = 'bg-warning text-dark';
-
-                                            echo "<div class='mb-1 p-1 rounded bg-light border text-truncate' title='" . htmlspecialchars($t['item_name'] . ": " . $t['task_name']) . "'>";
-                                            echo "<span class='badge {$bClass} me-1'>" . number_format($t['hours'], 2) . "h</span>";
-                                            echo "<strong class='text-dark'>" . htmlspecialchars($t['task_name']) . "</strong>";
-                                            echo "</div>";
-                                        }
-                                        echo "</div>";
-                                        echo "</td>";
-                                        $dayCounter++;
-                                    }
-                                    $cellCounter++;
-                                }
-                                echo "</tr>";
-                            }
-                            ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    <?php endif; ?>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var calendarEl = document.getElementById("fullCalendarContainer");
+    if (!calendarEl) return;
+
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        initialDate: "<?= sprintf('%04d-%02d-01', $selectedYear, $selectedMonth) ?>",
+        headerToolbar: {
+            left: "prev,next today",
+            center: "title",
+            right: "dayGridMonth,timeGridWeek,timeGridDay,listMonth"
+        },
+        buttonText: {
+            today: "Today",
+            month: "Grid Month",
+            week: "Week",
+            day: "Day",
+            list: "Agenda List"
+        },
+        events: <?= json_encode($fcEvents) ?>,
+        eventClick: function(info) {
+            var props = info.event.extendedProps;
+            document.getElementById("modalTaskTitle").innerText = props.task_name;
+            document.getElementById("modalTaskItem").innerText = props.item_name;
+            document.getElementById("modalTaskCategory").innerText = props.category;
+            document.getElementById("modalTaskHours").innerText = props.hours + " hrs";
+            document.getElementById("modalTaskStart").innerText = props.entry_datetime;
+            document.getElementById("modalTaskEnd").innerText = props.end_datetime;
+            document.getElementById("modalTaskTicket").innerText = props.ticket_ref ? props.ticket_ref : "None";
+            document.getElementById("modalEditLink").href = "index.php?route=time_tracker&edit_task=" + info.event.id;
+
+            var modal = new bootstrap.Modal(document.getElementById("taskDetailModal"));
+            modal.show();
+        }
+    });
+    calendar.render();
+});
+</script>

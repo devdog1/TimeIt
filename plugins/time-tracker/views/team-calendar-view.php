@@ -44,11 +44,76 @@ if ($nextMonth > 12) { $nextMonth = 1; $nextYear++; }
 $totalTeamMonthHours = array_sum(array_column($completedTasks, 'hours'));
 ?>
 
+<?php
+// Prepare FullCalendar team event objects
+$fcTeamEvents = [];
+
+foreach ($instances as $inst) {
+    if ($inst['status'] !== 'pending') continue;
+    $dueStatus = $inst['due_status'];
+    $isClaimed = !empty($inst['assigned_user_name']);
+
+    $color = $isClaimed ? '#ffc107' : '#dc3545';
+    $title = ($isClaimed ? '[WORKING ON: ' . $inst['assigned_user_name'] . '] ' : '[CRITICAL] ') . $inst['task_name'];
+
+    $fcTeamEvents[] = [
+        'id' => 'inst_' . $inst['id'],
+        'title' => $title,
+        'start' => $inst['due_date'],
+        'backgroundColor' => $color,
+        'borderColor' => $color,
+        'textColor' => $isClaimed ? '#000000' : '#ffffff',
+        'extendedProps' => [
+            'type' => 'instance',
+            'instance_id' => $inst['id'],
+            'task_name' => $inst['task_name'],
+            'item_name' => $inst['item_name'] ?? 'Unassigned',
+            'due_date' => date('M d, Y', strtotime($inst['due_date'])),
+            'due_label' => $dueStatus['label'],
+            'badge_class' => $dueStatus['badge_class'],
+            'is_claimed' => $isClaimed,
+            'assigned_user_name' => $inst['assigned_user_name'] ?? ''
+        ]
+    ];
+}
+
+foreach ($completedTasks as $t) {
+    $startIso = date('Y-m-d\TH:i:s', strtotime($t['entry_datetime']));
+    $endTs = strtotime($t['entry_datetime']) + (int)round(((float)$t['hours']) * 3600);
+    $endIso = date('Y-m-d\TH:i:s', $endTs);
+
+    $color = '#198754';
+
+    $fcTeamEvents[] = [
+        'id' => 'task_' . $t['id'],
+        'title' => '[' . $t['user_name'] . '] ' . $t['task_name'] . ' (' . number_format($t['hours'], 1) . 'h)',
+        'start' => $startIso,
+        'end' => $endIso,
+        'backgroundColor' => $color,
+        'borderColor' => $color,
+        'textColor' => '#ffffff',
+        'extendedProps' => [
+            'type' => 'task',
+            'task_name' => $t['task_name'],
+            'user_name' => $t['user_name'],
+            'item_name' => $t['item_name'] ?? 'Unassigned',
+            'category' => ucfirst($t['item_category'] ?? ''),
+            'hours' => number_format($t['hours'], 2),
+            'entry_datetime' => date('M d, Y h:i A', strtotime($t['entry_datetime'])),
+            'end_datetime' => date('M d, Y h:i A', $endTs)
+        ]
+    ];
+}
+?>
+
+<!-- FullCalendar Library -->
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+
 <div class="container-fluid py-3">
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h3 class="fw-bold mb-1"><i class="fa-solid fa-users-viewfinder text-primary me-2"></i> Team Calendar View</h3>
+            <h3 class="fw-bold mb-1"><i class="fa-solid fa-users-viewfinder text-primary me-2"></i> Team Calendar (FullCalendar)</h3>
             <p class="text-muted small mb-0">Overview of team pending, in-progress ("working on"), and completed critical tasks.</p>
         </div>
         <div class="d-flex gap-2">
@@ -75,12 +140,12 @@ $totalTeamMonthHours = array_sum(array_column($completedTasks, 'hours'));
         </div>
     <?php endif; ?>
 
-    <!-- Team Selector & Month Navigation Bar -->
+    <!-- Team Selector Bar -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div class="d-flex align-items-center gap-2">
                 <span class="fw-bold text-dark small"><i class="fa-solid fa-users me-1"></i> Select Team:</span>
-                <select onchange="location.href='index.php?route=time_tracker_team_calendar&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=<?= $viewMode ?>&team_id=' + this.value;" class="form-select form-select-sm bg-light text-dark fw-bold" style="width: auto;">
+                <select onchange="location.href='index.php?route=time_tracker_team_calendar&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&team_id=' + this.value;" class="form-select form-select-sm bg-light text-dark fw-bold" style="width: auto;">
                     <?php foreach ($teams as $t): ?>
                         <option value="<?= $t['id'] ?>" <?= $selectedTeamId == $t['id'] ? 'selected' : '' ?>>
                             <?= htmlspecialchars($t['name']) ?>
@@ -89,224 +154,101 @@ $totalTeamMonthHours = array_sum(array_column($completedTasks, 'hours'));
                 </select>
             </div>
 
-            <div class="d-flex align-items-center gap-2">
-                <a href="index.php?route=time_tracker_team_calendar&team_id=<?= $selectedTeamId ?>&month=<?= $prevMonth ?>&year=<?= $prevYear ?>&view=<?= $viewMode ?>" class="btn btn-outline-primary btn-sm">
-                    <i class="fa-solid fa-chevron-left"></i>
-                </a>
-                <h5 class="fw-bold mb-0 text-dark px-2"><?= $monthName ?> <?= $selectedYear ?></h5>
-                <a href="index.php?route=time_tracker_team_calendar&team_id=<?= $selectedTeamId ?>&month=<?= $nextMonth ?>&year=<?= $nextYear ?>&view=<?= $viewMode ?>" class="btn btn-outline-primary btn-sm">
-                    <i class="fa-solid fa-chevron-right"></i>
-                </a>
-            </div>
-
-            <div class="d-flex align-items-center gap-2">
-                <div class="btn-group btn-group-sm me-2" role="group">
-                    <a href="index.php?route=time_tracker_team_calendar&team_id=<?= $selectedTeamId ?>&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=grid" class="btn <?= $viewMode === 'grid' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                        <i class="fa-solid fa-border-all me-1"></i> Grid
-                    </a>
-                    <a href="index.php?route=time_tracker_team_calendar&team_id=<?= $selectedTeamId ?>&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=agenda" class="btn <?= $viewMode === 'agenda' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                        <i class="fa-solid fa-list-ul me-1"></i> Agenda
-                    </a>
-                </div>
+            <div>
                 <span class="badge bg-success fs-6"><i class="fa-regular fa-clock me-1"></i> Team Month Hours: <?= number_format($totalTeamMonthHours, 2) ?> hrs</span>
             </div>
         </div>
     </div>
 
-    <?php if ($viewMode === 'agenda'): ?>
-        <!-- Team Agenda List View -->
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-light py-3">
-                <h5 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-list-ul me-2"></i> Team Monthly Agenda</h5>
-            </div>
-            <div class="card-body p-0">
-                <?php if (empty($completedTasks) && empty($instances)): ?>
-                    <div class="text-center py-5 text-muted">
-                        <i class="fa-solid fa-calendar-xmark fs-2 mb-2 d-block"></i>
-                        No team tasks or critical items scheduled for <?= $monthName ?> <?= $selectedYear ?>.
-                    </div>
-                <?php else: ?>
-                    <div class="list-group list-group-flush">
-                        <?php
-                        for ($d = 1; $d <= $daysInMonth; $d++):
-                            $dayTasks = $tasksByDay[$d] ?? [];
-                            $dayInstances = $instancesByDay[$d] ?? [];
-                            if (empty($dayTasks) && empty($dayInstances)) continue;
-                            $dayTs = mktime(0, 0, 0, $selectedMonth, $d, $selectedYear);
-                            $dayHours = array_sum(array_column($dayTasks, 'hours'));
-                        ?>
-                            <div class="list-group-item p-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-                                    <h6 class="fw-bold mb-0 text-primary">
-                                        <i class="fa-regular fa-calendar-check me-2"></i> <?= date('l, F j, Y', $dayTs) ?>
-                                    </h6>
-                                    <span class="badge bg-success fs-6"><?= number_format($dayHours, 2) ?> hrs</span>
-                                </div>
-
-                                <!-- Pending / Working-On Recurring Tasks -->
-                                <?php if (!empty($dayInstances)): ?>
-                                    <div class="mb-3">
-                                        <h6 class="fw-bold small text-danger mb-2"><i class="fa-solid fa-triangle-exclamation me-1"></i> Critical Team Tasks</h6>
-                                        <div class="row g-2">
-                                            <?php foreach ($dayInstances as $inst):
-                                                $dueStatus = $inst['due_status'];
-                                                if ($inst['status'] !== 'pending') continue;
-                                            ?>
-                                                <div class="col-md-6">
-                                                    <div class="p-2 rounded border <?= $inst['assigned_user_name'] ? 'bg-warning-subtle border-warning' : 'bg-danger-subtle border-danger' ?>">
-                                                        <div class="d-flex justify-content-between align-items-center mb-1">
-                                                            <strong class="text-dark small"><?= htmlspecialchars($inst['task_name']) ?></strong>
-                                                            <span class="badge <?= $dueStatus['badge_class'] ?>"><?= htmlspecialchars($dueStatus['label']) ?></span>
-                                                        </div>
-                                                        <small class="text-muted d-block mb-1">Item: <?= htmlspecialchars($inst['item_name']) ?></small>
-                                                        <?php if ($inst['assigned_user_name']): ?>
-                                                            <small class="badge bg-warning text-dark"><i class="fa-solid fa-spinner fa-spin me-1"></i> Working On: <?= htmlspecialchars($inst['assigned_user_name']) ?></small>
-                                                        <?php else: ?>
-                                                            <form action="index.php?route=time_tracker_team_calendar&team_id=<?= $selectedTeamId ?>&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>&view=agenda" method="POST" class="mt-2">
-                                                                <?php if (function_exists('csrf_field')) { echo csrf_field(); } ?>
-                                                                <input type="hidden" name="action" value="claim_recurring_instance">
-                                                                <input type="hidden" name="instance_id" value="<?= $inst['id'] ?>">
-                                                                <button type="submit" class="btn btn-sm btn-danger py-0 px-2 fw-bold small"><i class="fa-solid fa-hand-pointer me-1"></i> Take Ownership</button>
-                                                            </form>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </div>
-                                <?php endif; ?>
-
-                                <!-- Completed Tasks Table -->
-                                <?php if (!empty($dayTasks)): ?>
-                                    <div class="table-responsive">
-                                        <table class="table table-sm table-hover align-middle mb-0">
-                                            <thead>
-                                                <tr class="text-muted small">
-                                                    <th>User</th>
-                                                    <th>Time Range</th>
-                                                    <th>Category</th>
-                                                    <th>Applied Item / Project</th>
-                                                    <th>Task Description</th>
-                                                    <th class="text-end">Hours</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php foreach ($dayTasks as $t):
-                                                    $bClass = 'bg-secondary';
-                                                    if ($t['item_category'] === 'project') $bClass = 'bg-primary';
-                                                    elseif ($t['item_category'] === 'support') $bClass = 'bg-info text-dark';
-                                                    elseif ($t['item_category'] === 'maintenance') $bClass = 'bg-warning text-dark';
-
-                                                    $endTs = strtotime($t['entry_datetime']) + (int)round(((float)$t['hours']) * 3600);
-                                                    $timeStr = date('h:i A', strtotime($t['entry_datetime'])) . ' – ' . (($t['status'] ?? '') === 'in_progress' ? 'Now' : date('h:i A', $endTs));
-                                                ?>
-                                                    <tr>
-                                                        <td class="fw-bold"><i class="fa-solid fa-user me-1 text-secondary"></i> <?= htmlspecialchars($t['user_name']) ?></td>
-                                                        <td class="small text-nowrap"><?= $timeStr ?></td>
-                                                        <td><span class="badge <?= $bClass ?>"><?= ucfirst($t['item_category'] ?? '') ?></span></td>
-                                                        <td class="fw-bold"><?= htmlspecialchars($t['item_name'] ?? 'Unassigned') ?></td>
-                                                        <td><?= htmlspecialchars($t['task_name']) ?></td>
-                                                        <td class="fw-bold text-success text-end text-nowrap"><?= number_format($t['hours'], 2) ?> hrs</td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endfor; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
+    <!-- FullCalendar Container Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body p-3">
+            <div id="fullTeamCalendarContainer" style="min-height: 700px;"></div>
         </div>
-    <?php else: ?>
-        <!-- Team Calendar Grid View -->
-        <div class="card shadow-sm border-0">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-bordered mb-0 calendar-table" style="table-layout: fixed;">
-                        <thead class="table-dark text-center">
-                            <tr>
-                                <th style="width: 14.28%;">Sun</th>
-                                <th style="width: 14.28%;">Mon</th>
-                                <th style="width: 14.28%;">Tue</th>
-                                <th style="width: 14.28%;">Wed</th>
-                                <th style="width: 14.28%;">Thu</th>
-                                <th style="width: 14.28%;">Fri</th>
-                                <th style="width: 14.28%;">Sat</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php
-                            $dayCounter = 1;
-                            $cellCounter = 0;
-                            while ($dayCounter <= $daysInMonth) {
-                                echo "<tr>";
-                                for ($i = 0; $i < 7; $i++) {
-                                    if ($cellCounter < $startDayOfWeek || $dayCounter > $daysInMonth) {
-                                        echo "<td class='bg-light text-muted p-2' style='height: 140px; min-height: 140px;'></td>";
-                                    } else {
-                                        $dayTasks = $tasksByDay[$dayCounter] ?? [];
-                                        $dayInstances = $instancesByDay[$dayCounter] ?? [];
-                                        $dayHours = array_sum(array_column($dayTasks, 'hours'));
-                                        $isToday = ($dayCounter == date('j') && $selectedMonth == date('n') && $selectedYear == date('Y'));
-                                        $bgClass = $isToday ? 'bg-primary-subtle border border-primary' : '';
-
-                                        echo "<td class='p-2 align-top {$bgClass}' style='height: 140px; min-height: 140px; overflow-y: auto;'>";
-                                        echo "<div class='d-flex justify-content-between align-items-center mb-1'>";
-                                        echo "<span class='fw-bold fs-6 " . ($isToday ? 'text-primary' : '') . "'>{$dayCounter}</span>";
-                                        if ($dayHours > 0) {
-                                            echo "<span class='badge bg-success small'>" . number_format($dayHours, 2) . " hrs</span>";
-                                        }
-                                        echo "</div>";
-
-                                        // Render Pending & Working-On Recurring Instances
-                                        foreach ($dayInstances as $inst) {
-                                            $dueStatus = $inst['due_status'];
-                                            if ($inst['status'] === 'pending') {
-                                                if ($inst['assigned_user_name']) {
-                                                    // Working On State
-                                                    echo "<div class='p-1 rounded bg-warning-subtle border border-warning mb-1 small'>";
-                                                    echo "<div class='fw-bold text-dark text-truncate'><i class='fa-solid fa-spinner fa-spin text-warning me-1'></i> " . htmlspecialchars($inst['task_name']) . "</div>";
-                                                    echo "<small class='text-muted d-block'>Assigned: <strong>" . htmlspecialchars($inst['assigned_user_name']) . "</strong></small>";
-                                                    echo "</div>";
-                                                } else {
-                                                    // Unclaimed Pending State
-                                                    echo "<div class='p-1 rounded bg-danger-subtle border border-danger mb-1 small'>";
-                                                    echo "<div class='fw-bold text-danger text-truncate'><i class='fa-solid fa-triangle-exclamation me-1'></i> " . htmlspecialchars($inst['task_name']) . "</div>";
-                                                    echo "<span class='badge {$dueStatus['badge_class']} my-1 d-block text-truncate'>" . htmlspecialchars($dueStatus['label']) . "</span>";
-
-                                                    echo "<form action='index.php?route=time_tracker_team_calendar&team_id={$selectedTeamId}&month={$selectedMonth}&year={$selectedYear}' method='POST' class='mt-1'>";
-                                                    if (function_exists('csrf_field')) { echo csrf_field(); }
-                                                    echo "<input type='hidden' name='action' value='claim_recurring_instance'>";
-                                                    echo "<input type='hidden' name='instance_id' value='{$inst['id']}'>";
-                                                    echo "<button type='submit' class='btn btn-sm btn-danger py-0 px-1 w-100 fw-bold fs-7'><i class='fa-solid fa-hand-pointer me-1'></i> Take Ownership</button>";
-                                                    echo "</form>";
-                                                    echo "</div>";
-                                                }
-                                            }
-                                        }
-
-                                        // Render Completed Tasks
-                                        foreach ($dayTasks as $t) {
-                                            echo "<div class='mb-1 p-1 rounded bg-light border text-truncate small' title='" . htmlspecialchars($t['user_name'] . ": " . $t['task_name']) . "'>";
-                                            echo "<span class='badge bg-success me-1'>" . number_format($t['hours'], 2) . "h</span>";
-                                            echo "<strong>" . htmlspecialchars($t['user_name']) . ":</strong> " . htmlspecialchars($t['task_name']);
-                                            echo "</div>";
-                                        }
-
-                                        echo "</td>";
-                                        $dayCounter++;
-                                    }
-                                    $cellCounter++;
-                                }
-                                echo "</tr>";
-                            }
-                            ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    <?php endif; ?>
+    </div>
 </div>
+
+<!-- Instance / Task Action Modal -->
+<div class="modal fade" id="teamEventModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title fw-bold" id="teamModalHeaderTitle">Task Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-start">
+                <h5 id="teamModalTitle" class="fw-bold text-dark mb-3"></h5>
+                <div id="teamModalTaskBody"></div>
+            </div>
+            <div class="modal-footer" id="teamModalFooter">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var calendarEl = document.getElementById("fullTeamCalendarContainer");
+    if (!calendarEl) return;
+
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        initialDate: "<?= sprintf('%04d-%02d-01', $selectedYear, $selectedMonth) ?>",
+        headerToolbar: {
+            left: "prev,next today",
+            center: "title",
+            right: "dayGridMonth,timeGridWeek,timeGridDay,listMonth"
+        },
+        buttonText: {
+            today: "Today",
+            month: "Grid Month",
+            week: "Week",
+            day: "Day",
+            list: "Agenda List"
+        },
+        events: <?= json_encode($fcTeamEvents) ?>,
+        eventClick: function(info) {
+            var props = info.event.extendedProps;
+            document.getElementById("teamModalTitle").innerText = props.task_name;
+
+            var bodyHtml = '';
+            var footerHtml = '<button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>';
+
+            if (props.type === 'instance') {
+                document.getElementById("teamModalHeaderTitle").innerText = 'Critical Recurring Task';
+                bodyHtml += '<p class="small text-muted">Item: <strong>' + props.item_name + '</strong> &bull; Due: ' + props.due_date + '</p>';
+                bodyHtml += '<p><span class="badge ' + props.badge_class + '">' + props.due_label + '</span></p>';
+
+                if (props.is_claimed) {
+                    bodyHtml += '<div class="alert alert-warning py-2 small fw-bold"><i class="fa-solid fa-spinner fa-spin me-1"></i> Working On: ' + props.assigned_user_name + '</div>';
+                } else {
+                    footerHtml += '<form action="index.php?route=time_tracker_team_calendar&team_id=<?= $selectedTeamId ?>&month=<?= $selectedMonth ?>&year=<?= $selectedYear ?>" method="POST" class="d-inline">';
+                    footerHtml += '<?= function_exists('csrf_field') ? csrf_field() : '' ?>';
+                    footerHtml += '<input type="hidden" name="action" value="claim_recurring_instance">';
+                    footerHtml += '<input type="hidden" name="instance_id" value="' + props.instance_id + '">';
+                    footerHtml += '<button type="submit" class="btn btn-danger btn-sm fw-bold"><i class="fa-solid fa-hand-pointer me-1"></i> Take Ownership & Start Timer</button>';
+                    footerHtml += '</form>';
+                }
+            } else {
+                document.getElementById("teamModalHeaderTitle").innerText = 'Completed Team Task';
+                bodyHtml += '<dl class="row mb-0 small">';
+                bodyHtml += '<dt class="col-sm-4">Completed By:</dt><dd class="col-sm-8 fw-bold text-primary">' + props.user_name + '</dd>';
+                bodyHtml += '<dt class="col-sm-4">Category:</dt><dd class="col-sm-8">' + props.category + '</dd>';
+                bodyHtml += '<dt class="col-sm-4">Project / Item:</dt><dd class="col-sm-8 fw-bold">' + props.item_name + '</dd>';
+                bodyHtml += '<dt class="col-sm-4">Start Time:</dt><dd class="col-sm-8">' + props.entry_datetime + '</dd>';
+                bodyHtml += '<dt class="col-sm-4">End Time:</dt><dd class="col-sm-8">' + props.end_datetime + '</dd>';
+                bodyHtml += '<dt class="col-sm-4">Hours Spent:</dt><dd class="col-sm-8 fw-bold text-success">' + props.hours + ' hrs</dd>';
+                bodyHtml += '</dl>';
+            }
+
+            document.getElementById("teamModalTaskBody").innerHTML = bodyHtml;
+            document.getElementById("teamModalFooter").innerHTML = footerHtml;
+
+            var modal = new bootstrap.Modal(document.getElementById("teamEventModal"));
+            modal.show();
+        }
+    });
+    calendar.render();
+});
+</script>
