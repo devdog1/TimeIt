@@ -94,6 +94,20 @@ foreach ($tasks as $t) {
         </div>
     </div>
 
+    <!-- Color Legend Bar -->
+    <div class="card shadow-sm border-0 mb-3 bg-light">
+        <div class="card-body py-2 d-flex flex-wrap align-items-center justify-content-between gap-2 small">
+            <div class="d-flex align-items-center gap-3">
+                <span class="fw-bold text-secondary"><i class="fa-solid fa-palette me-1"></i> Category Legend:</span>
+                <span><span class="badge" style="background-color: #0d6efd;">&nbsp;&nbsp;</span> Projects</span>
+                <span><span class="badge text-dark" style="background-color: #0dcaf0;">&nbsp;&nbsp;</span> Support Activities</span>
+                <span><span class="badge text-dark" style="background-color: #ffc107;">&nbsp;&nbsp;</span> Maintenance</span>
+                <span><span class="badge" style="background-color: #6c757d;">&nbsp;&nbsp;</span> Other Categories</span>
+            </div>
+            <span class="text-muted"><i class="fa-solid fa-hand-pointer me-1"></i> Click any task entry for details or editing.</span>
+        </div>
+    </div>
+
     <!-- FullCalendar Card Container -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body p-3">

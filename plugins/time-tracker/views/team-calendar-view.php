@@ -160,6 +160,19 @@ foreach ($completedTasks as $t) {
         </div>
     </div>
 
+    <!-- Color Legend Bar -->
+    <div class="card shadow-sm border-0 mb-3 bg-light">
+        <div class="card-body py-2 d-flex flex-wrap align-items-center justify-content-between gap-2 small">
+            <div class="d-flex align-items-center gap-3">
+                <span class="fw-bold text-secondary"><i class="fa-solid fa-palette me-1"></i> Team Legend:</span>
+                <span><span class="badge" style="background-color: #dc3545;">&nbsp;&nbsp;</span> Critical Unclaimed Task</span>
+                <span><span class="badge text-dark" style="background-color: #ffc107;">&nbsp;&nbsp;</span> Working-On / Claimed</span>
+                <span><span class="badge" style="background-color: #198754;">&nbsp;&nbsp;</span> Completed Team Task</span>
+            </div>
+            <span class="text-muted"><i class="fa-solid fa-hand-pointer me-1"></i> Click any critical task to take ownership or view details.</span>
+        </div>
+    </div>
+
     <!-- FullCalendar Container Card -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body p-3">
